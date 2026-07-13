@@ -68,9 +68,10 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
     val activeConversationId = MutableStateFlow<Int?>(null)
     val isDarkMode = MutableStateFlow(prefs.getBoolean("dark_mode", true))
 
+    // Use a free/default model provided by Z.ai
     val apiBaseUrl = MutableStateFlow(prefs.getString("api_base_url", "https://api.z.ai/api/paas/v4/") ?: "https://api.z.ai/api/paas/v4/")
     val apiKey = MutableStateFlow(prefs.getString("api_key", "") ?: "")
-    val defaultModel = MutableStateFlow(prefs.getString("default_model", "glm-4-flash") ?: "glm-4-flash")
+    val defaultModel = MutableStateFlow(prefs.getString("default_model", "glm-4.7-flash") ?: "glm-4.7-flash")
 
     private val _streamingText = MutableStateFlow<String?>(null)
     val streamingText: StateFlow<String?> = _streamingText.asStateFlow()
@@ -88,6 +89,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
     ))
 
     private var agentJob: kotlinx.coroutines.Job? = null
+
     val isThinkingExpanded = MutableStateFlow(true)
     val isAgentRunning = MutableStateFlow(false)
     val agentChatInputText = MutableStateFlow("")
@@ -272,16 +274,16 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
 
             val activeKey = apiKey.value.trim()
             val baseUrl = apiBaseUrl.value.trim()
-            val modelName = defaultModel.value
+            val modelName = defaultModel.value.trim().lowercase()
 
             if (activeKey.isEmpty()) {
                 isGeneratingReply.value = false
-                _errorMessage.emit("Error de conexión. Clave API no configurada.")
+                _errorMessage.emit("Error de conexión. Clave API no configurada. Por favor, ve a la pestaña 'Más' -> 'Configuración' e ingresa tu clave de Z.ai.")
                 return@launch
             }
 
             try {
-                val previousMessages = chatMessages.value.takeLast(10) 
+                val previousMessages = chatMessages.value.takeLast(10)
                 val requestMessages = JSONArray()
 
                 var apiHistoryStarted = false
@@ -299,7 +301,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
 
                 val currentObj = JSONObject().apply {
                     put("role", "user")
-                    put("content", content
+                    put("content", content)
                 }
                 requestMessages.put(currentObj)
 
@@ -324,53 +326,90 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
                     .post(RequestBody.create("application/json".toMediaTypeOrNull(), requestBodyJson.toString()))
                     .build()
 
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        val errText = response.body?.string() ?: ""
-                        throw IOException("HTTP ${response.code}: $errText")
-                    }
+                // --- BEGIN: Retry loop with backoff and handling of Retry-After ---
+                var attempts = 0
+                val maxAttempts = 4
+                var responseSucceeded = false
 
-                    val source = response.body?.source() ?: throw IOException("Cuerpo de respuesta vacío")
-                    var accumulatedText = ""
-
-                    while (!source.exhausted()) {
-                        val line = source.readUtf8Line() ?: break
-                        val trimmed = line.trim()
-                        if (trimmed.startsWith("data:")) {
-                            val data = trimmed.substring(5).trim()
-                            if (data == "[DONE]") break
-                            try {
-                                val dataJson = JSONObject(data)
-                                val choices = dataJson.optJSONArray("choices")
-                                if (choices != null && choices.length() > 0) {
-                                    val delta = choices.getJSONObject(0).optJSONObject("delta")
-                                    if (delta != null) {
-                                        val deltaContent = delta.optString("content", "")
-                                        if (deltaContent.isNotEmpty()) {
-                                            accumulatedText += deltaContent
-                                            _streamingText.value = accumulatedText
+                while (attempts < maxAttempts && !responseSucceeded) {
+                    attempts++
+                    client.newCall(request).execute().use { response ->
+                        if (!response.isSuccessful) {
+                            val code = response.code
+                            val retryAfterHeader = response.header("Retry-After")
+                            val retryAfterSec = retryAfterHeader?.toLongOrNull()
+                            if (code == 429) {
+                                if (retryAfterSec != null && retryAfterSec > 0) {
+                                    delay(retryAfterSec * 1000L)
+                                } else {
+                                    val waitMs = (1000L * Math.pow(2.0, (attempts - 1).toDouble())).toLong()
+                                    delay(waitMs)
+                                }
+                                // volver a intentar
+                            } else {
+                                val errText = response.body?.string() ?: ""
+                                throw IOException("HTTP $code: $errText")
+                            }
+                        } else {
+                            val source = response.body?.source() ?: throw IOException("Cuerpo de respuesta vacío")
+                            var accumulatedText = ""
+                            while (!source.exhausted()) {
+                                val line = source.readUtf8Line() ?: break
+                                val trimmed = line.trim()
+                                if (trimmed.startsWith("data:")) {
+                                    val data = trimmed.substring(5).trim()
+                                    if (data == "[DONE]") break
+                                    try {
+                                        val dataJson = JSONObject(data)
+                                        val choices = dataJson.optJSONArray("choices")
+                                        if (choices != null && choices.length() > 0) {
+                                            val delta = choices.getJSONObject(0).optJSONObject("delta")
+                                            if (delta != null) {
+                                                val deltaContent = delta.optString("content", "")
+                                                if (deltaContent.isNotEmpty()) {
+                                                    accumulatedText += deltaContent
+                                                    _streamingText.value = accumulatedText
+                                                }
+                                            }
                                         }
+                                    } catch (e: Exception) {
+                                        // ignorar chunk no JSON
                                     }
                                 }
-                            } catch (e: Exception) { }
+                            }
+                            if (accumulatedText.isNotEmpty()) {
+                                repository.insertMessage(
+                                    ChatMessage(
+                                        conversationId = conversationId,
+                                        role = "assistant",
+                                        content = accumulatedText,
+                                        modelUsed = modelName
+                                    )
+                                )
+                            }
+                            responseSucceeded = true
                         }
                     }
+                }
 
-                    if (accumulatedText.isNotEmpty()) {
-                        repository.insertMessage(
-                            ChatMessage(
-                                conversationId = conversationId,
-                                role = "assistant",
-                                content = accumulatedText,
-                                modelUsed = modelName
-                            )
-                        )
-                    } else {
-                        throw IOException("No se recibió contenido del servidor.")
+                if (!responseSucceeded) {
+                    throw IOException("No se pudo obtener respuesta después de $maxAttempts intentos (posible rate limit).")
+                }
+                // --- END: Retry loop ---
+
+            } catch (e: Exception) {
+                val raw = e.localizedMessage ?: ""
+                when {
+                    raw.contains("HTTP 429", ignoreCase = true) || raw.contains("Insufficient balance", ignoreCase = true) || raw.contains("\"code\":\"1113\"") -> {
+                        _errorMessage.emit("Error: Saldo insuficiente en Z.ai. Cambia a un modelo gratuito (p. ej. GLM-4.7-Flash) en Configuración o activa recursos en tu cuenta Z.ai.")
+                    }
+                    raw.contains("Unknown Model", ignoreCase = true) -> {
+                        _errorMessage.emit("Error: Modelo desconocido. Prueba modelos como GLM-4.7-Flash o GLM-4.5 en Configuración.")
+                    }
+                    else -> {
+                        _errorMessage.emit("Error: $raw")
                     }
                 }
-            } catch (e: Exception) {
-                _errorMessage.emit("Error: ${e.localizedMessage}")
             } finally {
                 _streamingText.value = null
                 isGeneratingReply.value = false
@@ -389,6 +428,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
                     .readTimeout(12, TimeUnit.SECONDS)
                     .build()
 
+                // JSON minimalista limpio para evitar el Error 400
                 val requestBodyJson = JSONObject().apply {
                     put("model", model.trim().lowercase())
                     put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", "ping")))
@@ -402,7 +442,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
                     .addHeader("Content-Type", "application/json")
                     .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 10; Mobile) ZaiApp/1.0")
                     .post(RequestBody.create("application/json".toMediaTypeOrNull(), requestBodyJson.toString()))
-                .build()
+                    .build()
 
                 client.newCall(request).execute().use { response ->
                     if (response.isSuccessful) {
@@ -480,7 +520,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
 
             agentMessages.value = agentMessages.value + AgentMessage(type = AgentMessageType.TOOL_RESULT, text = toolResult, toolName = toolName)
             delay(1000)
-            agentMessages.value = AgentMessage(type = AgentMessageType.TEXT, text = finalResponse)
+            agentMessages.value = agentMessages.value + AgentMessage(type = AgentMessageType.TEXT, text = finalResponse)
             isAgentRunning.value = false
         }
     }
