@@ -291,26 +291,35 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
                 val previousMessages = chatMessages.value
                 val requestMessages = JSONArray()
 
+                // Filtro para asegurar que el primer mensaje enviado al servidor NUNCA sea del asistente
+                var apiHistoryStarted = false
+
                 previousMessages.forEach { msg ->
-                    val mObj = JSONObject()
-                    mObj.put("role", msg.role)
-                    
-                    if (modelName.lowercase().contains("turbo") && msg.role == "user" && msg.content.contains("http")) {
-                        val contentArr = JSONArray()
-                        val textObj = JSONObject().put("type", "text").put("text", msg.content)
-                        contentArr.put(textObj)
-                        
-                        val imageUrl = extractImageUrl(msg.content)
-                        if (imageUrl != null) {
-                            val imgObj = JSONObject().put("type", "image_url")
-                                .put("image_url", JSONObject().put("url", imageUrl))
-                            contentArr.put(imgObj)
-                        }
-                        mObj.put("content", contentArr)
-                    } else {
-                        mObj.put("content", msg.content)
+                    if (msg.role == "user" || msg.role == "system") {
+                        apiHistoryStarted = true
                     }
-                    requestMessages.put(mObj)
+                    
+                    if (apiHistoryStarted) {
+                        val mObj = JSONObject()
+                        mObj.put("role", msg.role)
+                        
+                        if (modelName.lowercase().contains("turbo") && msg.role == "user" && msg.content.contains("http")) {
+                            val contentArr = JSONArray()
+                            val textObj = JSONObject().put("type", "text").put("text", msg.content)
+                            contentArr.put(textObj)
+                            
+                            val imageUrl = extractImageUrl(msg.content)
+                            if (imageUrl != null) {
+                                val imgObj = JSONObject().put("type", "image_url")
+                                    .put("image_url", JSONObject().put("url", imageUrl))
+                                contentArr.put(imgObj)
+                            }
+                            mObj.put("content", contentArr)
+                        } else {
+                            mObj.put("content", msg.content)
+                        }
+                        requestMessages.put(mObj)
+                    }
                 }
 
                 val currentObj = JSONObject()
