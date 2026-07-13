@@ -22,8 +22,14 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
-    - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v3
+    - name: Install Android SDK packages and accept licences
+      run: |
+        # Ajusta la API y build-tools aquí si tu proyecto usa otra versión.
+        yes | sdkmanager --licenses
+        sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+    - name: Ensure gradlew is executable
+      run: chmod +x ./gradlew
 
     - name: Cache Gradle packages
       uses: actions/cache@v4
@@ -35,11 +41,11 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-gradle-
 
-    - name: Build with Gradle
-      run: gradle assembleDebug
+    - name: Build with Gradle wrapper
+      run: ./gradlew assembleDebug --no-daemon --stacktrace
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: ZaiApp-APK
-        path: app/build/outputs/apk/debug/app-debug.apk
+        path: app/build/outputs/apk/debug/*.apk
