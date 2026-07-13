@@ -1,0 +1,8 @@
+body { font-family: system-ui, Arial, sans-serif; margin: 0; padding: 16px; background: #f6f8fa; color: #111; }
+.app { max-width: 820px; margin: 0 auto; }
+header { display:flex; gap:12px; align-items:center; }
+input { padding:8px; font-size:16px; }
+button { padding:8px 12px; font-size:16px; }
+.card { background: #fff; padding:16px; border-radius:8px; box-shadow: 0 2px 6px rgba(0,0,0,0.08); margin-top: 16px; }
+.metrics { display:flex; gap:16px; margin-top:12px; }
+.error { color: #b00020; }
