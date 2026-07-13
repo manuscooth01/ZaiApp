@@ -288,7 +288,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
 
             val activeKey = apiKey.value.trim()
             val baseUrl = apiBaseUrl.value.trim()
-            val modelName = defaultModel.value
+            val modelName = defaultModel.value.trim().lowercase()
 
             if (activeKey.isEmpty()) {
                 isGeneratingReply.value = false
@@ -297,7 +297,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             try {
-                val previousMessages = chatMessages.value
+                val previousMessages = chatMessages.value.takeLast(10)
                 val requestMessages = JSONArray()
 
                 var apiHistoryStarted = false
