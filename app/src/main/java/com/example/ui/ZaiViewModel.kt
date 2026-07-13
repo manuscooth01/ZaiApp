@@ -288,6 +288,127 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
 
             val activeKey = apiKey.value.trim()
             val baseUrl = apiBaseUrl.value.trim()
+            val modelName = defaultModel.value
+
+            if (activeKey.isEmpty()) {
+                isGeneratingReply.value = false
+                _errorMessage.emit("Error de conexión. Clave API no configurada.")
+                return@launch
+            }
+
+            try {
+                // AQUÍ ESTÁ EL ARREGLO: Solo enviamos los últimos 10 mensajes
+                val previousMessages = chatMessages.value.takeLast(10) 
+                val requestMessages = JSONArray()
+
+                var apiHistoryStarted = false
+                previousMessages.forEach { msg ->
+                    if (msg.role == "user" || msg.role == "system") {
+                        apiHistoryStarted = true
+                    }
+                    if (apiHistoryStarted) {
+                        val mObj = JSONObject()
+                        mObj.put("role", msg.role)
+                        mObj.put("content", msg.content)
+                        requestMessages.put(mObj)
+                    }
+                }
+
+                val currentObj = JSONObject().apply {
+                    put("role", "user")
+                    put("content", content)
+                }
+                requestMessages.put(currentObj)
+
+                val requestBodyJson = JSONObject().apply {
+                    put("model", modelName.lowercase())
+                    put("messages", requestMessages)
+                    put("stream", true)
+                }
+
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(15, TimeUnit.SECONDS)
+                    .readTimeout(60, TimeUnit.SECONDS)
+                    .build()
+
+                val endpoint = if (baseUrl.endsWith("/")) baseUrl + "chat/completions" else "$baseUrl/chat/completions"
+
+                val request = Request.Builder()
+                    .url(endpoint)
+                    .addHeader("Authorization", "Bearer $activeKey")
+                    .addHeader("Content-Type", "application/json")
+                    .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 10; Mobile) ZaiApp/1.0")
+                    .post(RequestBody.create("application/json".toMediaTypeOrNull(), requestBodyJson.toString()))
+                    .build()
+
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        val errText = response.body?.string() ?: ""
+                        throw IOException("HTTP ${response.code}: $errText")
+                    }
+
+                    val source = response.body?.source() ?: throw IOException("Cuerpo de respuesta vacío")
+                    var accumulatedText = ""
+
+                    while (!source.exhausted()) {
+                        val line = source.readUtf8Line() ?: break
+                        val trimmed = line.trim()
+                        if (trimmed.startsWith("data:")) {
+                            val data = trimmed.substring(5).trim()
+                            if (data == "[DONE]") break
+                            try {
+                                val dataJson = JSONObject(data)
+                                val choices = dataJson.optJSONArray("choices")
+                                if (choices != null && choices.length() > 0) {
+                                    val delta = choices.getJSONObject(0).optJSONObject("delta")
+                                    if (delta != null) {
+                                        val deltaContent = delta.optString("content", "")
+                                        if (deltaContent.isNotEmpty()) {
+                                            accumulatedText += deltaContent
+                                            _streamingText.value = accumulatedText
+                                        }
+                                    }
+                                }
+                            } catch (e: Exception) { }
+                        }
+                    }
+
+                    if (accumulatedText.isNotEmpty()) {
+                        repository.insertMessage(
+                            ChatMessage(
+                                conversationId = conversationId,
+                                role = "assistant",
+                                content = accumulatedText,
+                                modelUsed = modelName
+                            )
+                        )
+                    } else {
+                        throw IOException("No se recibió contenido del servidor.")
+                    }
+                }
+            } catch (e: Exception) {
+                _errorMessage.emit("Error: ${e.localizedMessage}")
+            } finally {
+                _streamingText.value = null
+                isGeneratingReply.value = false
+            }
+        }
+    }
+
+            repository.insertMessage(
+                ChatMessage(
+                    conversationId = conversationId,
+                    role = "user",
+                    content = content,
+                    modelUsed = defaultModel.value
+                )
+            )
+
+            isGeneratingReply.value = true
+            _streamingText.value = ""
+
+            val activeKey = apiKey.value.trim()
+            val baseUrl = apiBaseUrl.value.trim()
             val modelName = defaultModel.value.trim().lowercase()
 
             if (activeKey.isEmpty()) {
