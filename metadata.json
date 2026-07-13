@@ -1,0 +1,6 @@
+{
+  "name": "GroqApp",
+  "description": "Groq API client with a 5-tab workspace, sandboxed files explorer, Room chat history, and customized Groq models.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
