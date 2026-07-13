@@ -1,0 +1,6 @@
+{
+  "name": "ZaiApp AI",
+  "description": "A dark mode AI assistant and reasoning agent workspace with custom sandbox environments.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
