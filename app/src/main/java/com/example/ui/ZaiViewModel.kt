@@ -62,29 +62,19 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = AppRepository(db, application)
     private val prefs = application.getSharedPreferences("zai_prefs", Context.MODE_PRIVATE)
 
-    // UI Navigation & Onboarding States
     val currentTab = MutableStateFlow(Tab.Chat)
     val showOnboarding = MutableStateFlow(prefs.getBoolean("show_onboarding", true))
-
-    // Anti-spam loading states
     val isTestingConnection = MutableStateFlow(false)
-
-    // Active conversation state
     val activeConversationId = MutableStateFlow<Int?>(null)
-
-    // Theme state (Dark Mode by default)
     val isDarkMode = MutableStateFlow(prefs.getBoolean("dark_mode", true))
 
-    // Settings States
     val apiBaseUrl = MutableStateFlow(prefs.getString("api_base_url", "https://api.z.ai/api/paas/v4/") ?: "https://api.z.ai/api/paas/v4/")
     val apiKey = MutableStateFlow(prefs.getString("api_key", "") ?: "")
     val defaultModel = MutableStateFlow(prefs.getString("default_model", "glm-4-flash") ?: "glm-4-flash")
 
-    // Active streaming message content for real-time UI updates
     private val _streamingText = MutableStateFlow<String?>(null)
     val streamingText: StateFlow<String?> = _streamingText.asStateFlow()
 
-    // Agent States
     val reasoningLevel = MutableStateFlow(prefs.getString("reasoning_level", "Maximo") ?: "Maximo")
     val reasoningModeEnabled: StateFlow<Boolean> = reasoningLevel
         .map { it != "No pensar" }
@@ -98,7 +88,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
     ))
 
     private var agentJob: kotlinx.coroutines.Job? = null
-
     val isThinkingExpanded = MutableStateFlow(true)
     val isAgentRunning = MutableStateFlow(false)
     val agentChatInputText = MutableStateFlow("")
@@ -106,15 +95,12 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
     private val _agentSteps = MutableStateFlow<List<AgentStep>>(emptyList())
     val agentSteps: StateFlow<List<AgentStep>> = _agentSteps.asStateFlow()
 
-    // Support Ticket Form State
     val ticketsList: StateFlow<List<SupportTicket>> = repository.allTickets
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Past Conversations Flow
     val conversationsList: StateFlow<List<Conversation>> = repository.allConversations
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Room Database Observables
     val chatMessages: StateFlow<List<ChatMessage>> = activeConversationId
         .flatMapLatest { id ->
             if (id != null) {
@@ -128,11 +114,9 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
     val sandboxFiles: StateFlow<List<SandboxFile>> = repository.allFiles
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Chat Input State
     val chatInputText = MutableStateFlow("")
     val isGeneratingReply = MutableStateFlow(false)
 
-    // Error communication state
     private val _errorMessage = MutableSharedFlow<String>()
     val errorMessage = _errorMessage.asSharedFlow()
 
@@ -297,7 +281,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             try {
-                // AQUÍ ESTÁ EL ARREGLO: Solo enviamos los últimos 10 mensajes
                 val previousMessages = chatMessages.value.takeLast(10) 
                 val requestMessages = JSONArray()
 
@@ -316,127 +299,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
 
                 val currentObj = JSONObject().apply {
                     put("role", "user")
-                    put("content", content)
-                }
-                requestMessages.put(currentObj)
-
-                val requestBodyJson = JSONObject().apply {
-                    put("model", modelName.lowercase())
-                    put("messages", requestMessages)
-                    put("stream", true)
-                }
-
-                val client = OkHttpClient.Builder()
-                    .connectTimeout(15, TimeUnit.SECONDS)
-                    .readTimeout(60, TimeUnit.SECONDS)
-                    .build()
-
-                val endpoint = if (baseUrl.endsWith("/")) baseUrl + "chat/completions" else "$baseUrl/chat/completions"
-
-                val request = Request.Builder()
-                    .url(endpoint)
-                    .addHeader("Authorization", "Bearer $activeKey")
-                    .addHeader("Content-Type", "application/json")
-                    .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 10; Mobile) ZaiApp/1.0")
-                    .post(RequestBody.create("application/json".toMediaTypeOrNull(), requestBodyJson.toString()))
-                    .build()
-
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        val errText = response.body?.string() ?: ""
-                        throw IOException("HTTP ${response.code}: $errText")
-                    }
-
-                    val source = response.body?.source() ?: throw IOException("Cuerpo de respuesta vacío")
-                    var accumulatedText = ""
-
-                    while (!source.exhausted()) {
-                        val line = source.readUtf8Line() ?: break
-                        val trimmed = line.trim()
-                        if (trimmed.startsWith("data:")) {
-                            val data = trimmed.substring(5).trim()
-                            if (data == "[DONE]") break
-                            try {
-                                val dataJson = JSONObject(data)
-                                val choices = dataJson.optJSONArray("choices")
-                                if (choices != null && choices.length() > 0) {
-                                    val delta = choices.getJSONObject(0).optJSONObject("delta")
-                                    if (delta != null) {
-                                        val deltaContent = delta.optString("content", "")
-                                        if (deltaContent.isNotEmpty()) {
-                                            accumulatedText += deltaContent
-                                            _streamingText.value = accumulatedText
-                                        }
-                                    }
-                                }
-                            } catch (e: Exception) { }
-                        }
-                    }
-
-                    if (accumulatedText.isNotEmpty()) {
-                        repository.insertMessage(
-                            ChatMessage(
-                                conversationId = conversationId,
-                                role = "assistant",
-                                content = accumulatedText,
-                                modelUsed = modelName
-                            )
-                        )
-                    } else {
-                        throw IOException("No se recibió contenido del servidor.")
-                    }
-                }
-            } catch (e: Exception) {
-                _errorMessage.emit("Error: ${e.localizedMessage}")
-            } finally {
-                _streamingText.value = null
-                isGeneratingReply.value = false
-            }
-        }
-    }
-
-            repository.insertMessage(
-                ChatMessage(
-                    conversationId = conversationId,
-                    role = "user",
-                    content = content,
-                    modelUsed = defaultModel.value
-                )
-            )
-
-            isGeneratingReply.value = true
-            _streamingText.value = ""
-
-            val activeKey = apiKey.value.trim()
-            val baseUrl = apiBaseUrl.value.trim()
-            val modelName = defaultModel.value.trim().lowercase()
-
-            if (activeKey.isEmpty()) {
-                isGeneratingReply.value = false
-                _errorMessage.emit("Error de conexión. Clave API no configurada. Por favor, ve a la pestaña 'Más' -> 'Configuración' e ingresa tu clave de Z.ai.")
-                return@launch
-            }
-
-            try {
-                val previousMessages = chatMessages.value.takeLast(10)
-                val requestMessages = JSONArray()
-
-                var apiHistoryStarted = false
-                previousMessages.forEach { msg ->
-                    if (msg.role == "user" || msg.role == "system") {
-                        apiHistoryStarted = true
-                    }
-                    if (apiHistoryStarted) {
-                        val mObj = JSONObject()
-                        mObj.put("role", msg.role)
-                        mObj.put("content", msg.content)
-                        requestMessages.put(mObj)
-                    }
-                }
-
-                val currentObj = JSONObject().apply {
-                    put("role", "user")
-                    put("content", content)
+                    put("content", content
                 }
                 requestMessages.put(currentObj)
 
@@ -526,7 +389,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
                     .readTimeout(12, TimeUnit.SECONDS)
                     .build()
 
-                // JSON minimalista limpio para evitar el Error 400
                 val requestBodyJson = JSONObject().apply {
                     put("model", model.trim().lowercase())
                     put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", "ping")))
@@ -540,7 +402,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
                     .addHeader("Content-Type", "application/json")
                     .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 10; Mobile) ZaiApp/1.0")
                     .post(RequestBody.create("application/json".toMediaTypeOrNull(), requestBodyJson.toString()))
-                    .build()
+                .build()
 
                 client.newCall(request).execute().use { response ->
                     if (response.isSuccessful) {
@@ -618,7 +480,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
 
             agentMessages.value = agentMessages.value + AgentMessage(type = AgentMessageType.TOOL_RESULT, text = toolResult, toolName = toolName)
             delay(1000)
-            agentMessages.value = agentMessages.value + AgentMessage(type = AgentMessageType.TEXT, text = finalResponse)
+            agentMessages.value = AgentMessage(type = AgentMessageType.TEXT, text = finalResponse)
             isAgentRunning.value = false
         }
     }
