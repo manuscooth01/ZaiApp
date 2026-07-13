@@ -2307,13 +2307,27 @@ fun ConfigurationSubScreen(viewModel: ZaiViewModel) {
                                 }
                             }
                         },
+                        enabled = !viewModel.isTestingConnection.collectAsState().value,
                         shape = RoundedCornerShape(20.dp),
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.secondary,
+                            disabledContainerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+                        )
                     ) {
-                        Icon(imageVector = Icons.Default.Power, contentDescription = null)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Probar Conexión")
+                        if (viewModel.isTestingConnection.collectAsState().value) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = MaterialTheme.colorScheme.onSecondary,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Probando...")
+                        } else {
+                            Icon(imageVector = Icons.Default.Power, contentDescription = null)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Probar Conexión")
+                        }
                     }
                 }
             }
@@ -2521,20 +2535,6 @@ fun ProvidersSubScreen(viewModel: ZaiViewModel) {
                     }
                     Box(
                         modifier = Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(imageVector = Icons.Default.Check, contentDescription = "Activo", tint = Color.White, modifier = Modifier.size(16.dp))
-                    }
-                }
-
-                Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-
-                Text(text = "URL Base: $baseUrl", style = MaterialTheme.typography.bodySmall)
-                Text(text = "Clave API: ${if (apiKey.isEmpty()) "No configurada" else "••••••••••••"}", style = MaterialTheme.typography.bodySmall)
-
                 Button(
                     onClick = {
                         viewModel.testConnection(baseUrl, apiKey, model) { success, msg ->
@@ -2543,10 +2543,20 @@ fun ProvidersSubScreen(viewModel: ZaiViewModel) {
                             }
                         }
                     },
+                    enabled = !viewModel.isTestingConnection.collectAsState().value,
                     shape = RoundedCornerShape(20.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Probar Conexión")
+                    if (viewModel.isTestingConnection.collectAsState().value) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Probando...")
+                    } else {
+                        Text("Probar Conexión")
+                    }
                 }
             }
         }
