@@ -22,6 +22,11 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
       
+    - name: Generate Debug Keystore
+      run: |
+        keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+        mv debug.keystore app/
+      
     - name: Cache Gradle packages
       uses: actions/cache@v4
       with:
@@ -32,9 +37,6 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-gradle-
           
-# Eliminado: no se necesita gradlew
-# Eliminado: no se necesita gradlew
-      
     - name: Build with Gradle
       run: gradle assembleDebug
       
@@ -43,4 +45,3 @@ jobs:
       with:
         name: ZaiApp-APK
         path: app/build/outputs/apk/debug/app-debug.apk
-        
