@@ -11,12 +11,14 @@ plugins {
 
 android {
   namespace = "com.example"
-  compileSdk = 34
+  // Bumped to 36 to satisfy AAR metadata checks from dependencies
+  compileSdk = 36
 
   defaultConfig {
     applicationId = "com.zai.app"
     minSdk = 24
-    targetSdk = 34
+    // Match targetSdk to compileSdk
+    targetSdk = 36
     versionCode = 1
     versionName = "1.0"
 

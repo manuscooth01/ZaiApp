@@ -145,6 +145,6 @@ eval set -- $(
     xargs -n1 |
     sed ' s~[^-[:alnum:]+,./:=@_]~\\&~g; ' |
     tr '\n' ' '
-)
+) "$@"
 
 exec "$JAVACMD" "$@"
