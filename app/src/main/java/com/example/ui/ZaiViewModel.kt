@@ -74,7 +74,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
     // Settings States
     val apiBaseUrl = MutableStateFlow(prefs.getString("api_base_url", "https://api.z.ai/api/paas/v4/") ?: "https://api.z.ai/api/paas/v4/")
     val apiKey = MutableStateFlow(prefs.getString("api_key", "") ?: "")
-    val defaultModel = MutableStateFlow(prefs.getString("default_model", "GLM-5.2") ?: "GLM-5.2")
+    val defaultModel = MutableStateFlow(prefs.getString("default_model", "glm-4-flash") ?: "glm-4-flash")
 
     // Active streaming message content for real-time UI updates
     private val _streamingText = MutableStateFlow<String?>(null)
@@ -133,7 +133,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
     val errorMessage = _errorMessage.asSharedFlow()
 
     init {
-        // Load initial settings from database if exists or preferences
         viewModelScope.launch(Dispatchers.IO) {
             repository.appSettingsFlow.first()?.let { settings ->
                 apiBaseUrl.value = settings.apiBaseUrl
@@ -141,7 +140,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
                 defaultModel.value = settings.defaultModel
                 isDarkMode.value = settings.isDarkMode
             } ?: run {
-                // Prepopulate settings row
                 repository.saveAppSettings(
                     AppSettings(
                         apiBaseUrl = apiBaseUrl.value,
@@ -154,7 +152,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
 
             repository.prepopulateFilesIfEmpty()
 
-            // Auto-select latest conversation or create one
             repository.allConversations.first().let { conversations ->
                 if (conversations.isNotEmpty()) {
                     activeConversationId.value = conversations.first().id
@@ -168,24 +165,9 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun resetAgentSteps() {
         _agentSteps.value = listOf(
-            AgentStep(
-                number = 1,
-                title = "Analizando solicitud",
-                description = "Listo para procesar comandos autónomos en el sandbox.",
-                status = StepStatus.IDLE
-            ),
-            AgentStep(
-                number = 2,
-                title = "Ejecutando operaciones sandbox",
-                description = "Esperando comando de usuario.",
-                status = StepStatus.IDLE
-            ),
-            AgentStep(
-                number = 3,
-                title = "Sintetizando información",
-                description = "Generando archivo de salida.",
-                status = StepStatus.IDLE
-            )
+            AgentStep(1, "Analizando solicitud", "Listo para procesar comandos autónomos en el sandbox.", StepStatus.IDLE),
+            AgentStep(2, "Ejecutando operaciones sandbox", "Esperando comando de usuario.", StepStatus.IDLE),
+            AgentStep(3, "Sintetizando información", "Generando archivo de salida.", StepStatus.IDLE)
         )
     }
 
@@ -241,7 +223,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
             )
             activeConversationId.value = newConvId.toInt()
             
-            // Insert initial welcome message
             repository.insertMessage(
                 ChatMessage(
                     conversationId = newConvId.toInt(),
@@ -257,7 +238,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.deleteConversation(conversation)
             if (activeConversationId.value == conversation.id) {
-                // Select another or create new
                 repository.allConversations.first().let { list ->
                     if (list.isNotEmpty()) {
                         activeConversationId.value = list.first().id
@@ -269,7 +249,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Chat Functions (Fully functional with OkHttp streaming)
     fun sendMessage(content: String) {
         if (content.isBlank()) return
         val conversationId = activeConversationId.value ?: return
@@ -277,7 +256,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
         chatInputText.value = ""
 
         viewModelScope.launch(Dispatchers.IO) {
-            // Check if conversation title needs auto-generation (default text)
             repository.getConversationById(conversationId)?.let { conv ->
                 if (conv.title == "Nueva Conversación" || conv.title.length < 5) {
                     val newTitle = if (content.length > 30) content.substring(0, 30) + "..." else content
@@ -287,7 +265,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
-            // Insert User Message
             repository.insertMessage(
                 ChatMessage(
                     conversationId = conversationId,
@@ -297,7 +274,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
                 )
             )
 
-            // Start generating response
             isGeneratingReply.value = true
             _streamingText.value = ""
 
@@ -312,7 +288,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             try {
-                // Fetch previous messages for context
                 val previousMessages = chatMessages.value
                 val requestMessages = JSONArray()
 
@@ -320,7 +295,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
                     val mObj = JSONObject()
                     mObj.put("role", msg.role)
                     
-                    // Support Vision for glm-5v-turbo
                     if (modelName.lowercase().contains("turbo") && msg.role == "user" && msg.content.contains("http")) {
                         val contentArr = JSONArray()
                         val textObj = JSONObject().put("type", "text").put("text", msg.content)
@@ -339,7 +313,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
                     requestMessages.put(mObj)
                 }
 
-                // Add the current message
                 val currentObj = JSONObject()
                 currentObj.put("role", "user")
                 if (modelName.lowercase().contains("turbo") && content.contains("http")) {
@@ -375,6 +348,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
                     .url(endpoint)
                     .addHeader("Authorization", "Bearer $activeKey")
                     .addHeader("Content-Type", "application/json")
+                    .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 10; Mobile) ZaiApp/1.0")
                     .post(RequestBody.create("application/json".toMediaTypeOrNull(), requestBodyJson.toString()))
                     .build()
 
@@ -407,12 +381,11 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
                                     }
                                 }
                             } catch (e: Exception) {
-                                // Ignore json parse errors for individual lines
+                                // Ignore json parse errors
                             }
                         }
                     }
 
-                    // Save final message
                     if (accumulatedText.isNotEmpty()) {
                         repository.insertMessage(
                             ChatMessage(
@@ -443,7 +416,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
     fun clearChatHistory() {
         viewModelScope.launch(Dispatchers.IO) {
             repository.clearAllMessages()
-            // Reset active conversation
             repository.allConversations.first().forEach {
                 repository.deleteConversation(it)
             }
@@ -451,7 +423,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Sandbox File Operations
     fun addFile(name: String, content: String) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.insertFile(name, content)
@@ -470,7 +441,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Connection testing
     fun testConnection(baseUrl: String, key: String, model: String, onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -494,6 +464,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
                     .url(endpoint)
                     .addHeader("Authorization", "Bearer $key")
                     .addHeader("Content-Type", "application/json")
+                    .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 10; Mobile) ZaiApp/1.0")
                     .post(RequestBody.create("application/json".toMediaTypeOrNull(), requestBodyJson.toString()))
                     .build()
 
@@ -510,7 +481,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Support Ticket Form
     fun submitTicket(name: String, email: String, description: String) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.insertTicket(
@@ -524,7 +494,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Agent Autonomous Operations
     fun executeAgentTask(command: String) {
         if (command.isBlank() || isAgentRunning.value) return
         agentChatInputText.value = ""
@@ -533,7 +502,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
 
         val prompt = command.trim()
         
-        // Add user message immediately
         agentMessages.value = agentMessages.value + AgentMessage(
             type = AgentMessageType.USER,
             text = prompt
@@ -543,7 +511,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
         agentJob = viewModelScope.launch(Dispatchers.Default) {
             val isThinkingActive = reasoningLevel.value != "No pensar"
             
-            // Extract potential filename
             val filenameRegex = "([\\w\\-]+\\.[a-zA-Z0-9]+)".toRegex()
             val matchedFile = filenameRegex.find(prompt)?.value
 
@@ -557,7 +524,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
             if (promptLower.contains("busca") || promptLower.contains("web") || promptLower.contains("noticias") || promptLower.contains("internet") || promptLower.contains("google")) {
                 toolName = "web_search"
                 toolDisplayName = "Búsqueda Web"
-                val query = prompt.replace("(?i)(busca|en la web|las ultimas noticias de|las últimas noticias de|noticias de|sobre|en google|en internet)".toRegex(), "").trim()
+                val query = prompt.replace("(?i)(busca|en la web|las ultimas noticias de|las últimas noticias de|noticias de|sobre|en google|en internet)", "").trim()
                 toolDescription = "Buscando en la web sobre: \"$query\""
             } else if (promptLower.contains("lee") || promptLower.contains("mostrar") || promptLower.contains("cat ") || promptLower.contains("contenido") || promptLower.contains("abrir")) {
                 toolName = "read_file"
@@ -593,7 +560,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
                 toolDescription = "Buscando contexto para responder: \"$prompt\""
             }
 
-            // Step 1: Analizando
             if (isThinkingActive) {
                 _agentSteps.value = listOf(
                     AgentStep(1, "Analizando solicitud...", "Analizando el comando de lenguaje natural: \"$prompt\"", StepStatus.RUNNING),
@@ -605,7 +571,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
             }
             delay(if (reasoningLevel.value == "Alto") 800 else 1400)
 
-            // Step 2: Decidiendo
             if (isThinkingActive) {
                 _agentSteps.value = listOf(
                     AgentStep(1, "Analizando solicitud...", "Comando analizado con éxito.", StepStatus.SUCCESS),
@@ -617,7 +582,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
             }
             delay(if (reasoningLevel.value == "Alto") 800 else 1200)
 
-            // Add Tool Call Card
             agentMessages.value = agentMessages.value + AgentMessage(
                 type = AgentMessageType.TOOL_CALL,
                 text = "Herramienta: $toolDisplayName",
@@ -625,7 +589,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
                 toolDescription = toolDescription
             )
 
-            // Step 3: Ejecutando
             if (isThinkingActive) {
                 _agentSteps.value = listOf(
                     AgentStep(1, "Analizando solicitud...", "Comando analizado con éxito.", StepStatus.SUCCESS),
@@ -636,7 +599,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
 
-            // PERFORM ACTUAL ACTIONS
             when (toolName) {
                 "web_search" -> {
                     var searchDetails = listOf<String>()
@@ -755,14 +717,12 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
             }
             delay(if (reasoningLevel.value == "Alto") 1000 else 1800)
 
-            // Add Tool Result Card
             agentMessages.value = agentMessages.value + AgentMessage(
                 type = AgentMessageType.TOOL_RESULT,
                 text = toolResult,
                 toolName = toolName
             )
 
-            // Step 4: Procesando
             if (isThinkingActive) {
                 _agentSteps.value = listOf(
                     AgentStep(1, "Analizando solicitud...", "Comando analizado con éxito.", StepStatus.SUCCESS),
@@ -774,7 +734,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
             }
             delay(if (reasoningLevel.value == "Alto") 800 else 1200)
 
-            // Step 5: Sintetizando
             if (isThinkingActive) {
                 _agentSteps.value = listOf(
                     AgentStep(1, "Analizando solicitud...", "Comando analizado con éxito.", StepStatus.SUCCESS),
@@ -786,7 +745,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
             }
             delay(if (reasoningLevel.value == "Alto") 800 else 1200)
 
-            // Add final agent reply
             agentMessages.value = agentMessages.value + AgentMessage(
                 type = AgentMessageType.TEXT,
                 text = finalResponse
@@ -797,7 +755,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
                     AgentStep(1, "Analizando solicitud...", "Comando analizado con éxito.", StepStatus.SUCCESS),
                     AgentStep(2, "Decidiendo herramienta: $toolDisplayName", "Herramienta seleccionada: $toolName", StepStatus.SUCCESS),
                     AgentStep(3, "Ejecutando $toolName...", "Operación completada de forma segura.", StepStatus.SUCCESS, listOf(toolDescription)),
-                    AgentStep(4, "Procesando resultado...", "Resultados procesados con éxito.", StepStatus.SUCCESS),
+                    AgentStep(4, "Procesando resultado...", "Resultados processed con éxito.", StepStatus.SUCCESS),
                     AgentStep(5, "Sintetizando respuesta...", "Respuesta de síntesis generada.", StepStatus.SUCCESS)
                 )
             }
