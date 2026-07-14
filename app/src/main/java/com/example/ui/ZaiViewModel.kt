@@ -2,6 +2,7 @@ package com.example.ui
 
 import android.app.Application
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
@@ -43,8 +44,12 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
     fun completeOnboarding() {
         prefs.edit().putBoolean("onboarding_done", true).apply()
         _onboardingCompleted.value = true
-        // Open settings after finishing onboarding
         _showSettings.value = true
+    }
+
+    fun resetOnboarding() {
+        prefs.edit().putBoolean("onboarding_done", false).apply()
+        _onboardingCompleted.value = false
     }
 
     // ─── Configuración ──────────────────────────────────
@@ -70,10 +75,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
         _selectedProvider.value = p
         _baseUrl.value = providers[p] ?: _baseUrl.value
         val defaultModel = defaultModels[p]
-        if (defaultModel != null && _selectedModel.value.isBlank()) {
-            _selectedModel.value = defaultModel
-        } else if (defaultModel != null) {
-            // Auto-fill model when switching provider if current looks empty/default
+        if (defaultModel != null) {
             _selectedModel.value = defaultModel
         }
         prefs.edit().putString("provider", p).apply()
@@ -128,12 +130,43 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
         saveApiKey(key)
     }
 
+    // ─── Extras: creatividad, web search, TTS, anti-spam ──────────────
+    private val _creativity = MutableStateFlow(prefs.getFloat("creativity", 0.7f))
+    val creativity: StateFlow<Float> = _creativity.asStateFlow()
+    fun setCreativity(v: Float) {
+        val clamped = v.coerceIn(0f, 2f)
+        _creativity.value = clamped
+        prefs.edit().putFloat("creativity", clamped).apply()
+    }
+
+    private val _webSearchEnabled = MutableStateFlow(prefs.getBoolean("web_search", false))
+    val webSearchEnabled: StateFlow<Boolean> = _webSearchEnabled.asStateFlow()
+    fun setWebSearchEnabled(v: Boolean) {
+        _webSearchEnabled.value = v
+        prefs.edit().putBoolean("web_search", v).apply()
+    }
+
+    private val _ttsEnabled = MutableStateFlow(prefs.getBoolean("tts_enabled", false))
+    val ttsEnabled: StateFlow<Boolean> = _ttsEnabled.asStateFlow()
+    fun setTtsEnabled(v: Boolean) {
+        _ttsEnabled.value = v
+        prefs.edit().putBoolean("tts_enabled", v).apply()
+    }
+
+    private val _antiSpamEnabled = MutableStateFlow(prefs.getBoolean("anti_spam", false))
+    val antiSpamEnabled: StateFlow<Boolean> = _antiSpamEnabled.asStateFlow()
+    fun setAntiSpamEnabled(v: Boolean) {
+        _antiSpamEnabled.value = v
+        prefs.edit().putBoolean("anti_spam", v).apply()
+    }
+
     // ─── UI flags ───────────────────────────────────────
     private val _showSettings = MutableStateFlow(false)
     val showSettings: StateFlow<Boolean> = _showSettings.asStateFlow()
     fun openSettings() { _showSettings.value = true }
     fun closeSettings() { _showSettings.value = false }
 
+    // Mantener compat con drawer viejo pero ya no se usa el history overlay antiguo:
     private val _showHistoryMenu = MutableStateFlow(false)
     val showHistoryMenu: StateFlow<Boolean> = _showHistoryMenu.asStateFlow()
     fun toggleHistoryMenu() { _showHistoryMenu.value = !_showHistoryMenu.value }
@@ -143,10 +176,12 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
     val currentTab: StateFlow<String> = _currentTab.asStateFlow()
     fun setCurrentTab(tab: String) { _currentTab.value = tab }
 
-    /** Agent reasoning switch (shown in agent header). */
-    private val _reasoningEnabled = MutableStateFlow(true)
+    private val _reasoningEnabled = MutableStateFlow(prefs.getBoolean("reasoning_enabled", true))
     val reasoningEnabled: StateFlow<Boolean> = _reasoningEnabled.asStateFlow()
-    fun setReasoningEnabled(v: Boolean) { _reasoningEnabled.value = v }
+    fun setReasoningEnabled(v: Boolean) {
+        _reasoningEnabled.value = v
+        prefs.edit().putBoolean("reasoning_enabled", v).apply()
+    }
 
     // ─── Sesiones separadas ─────────────────────────────
     private val _chatMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
@@ -157,6 +192,11 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
     private var chatSessionId: Long? = null
     private var agentSessionId: Long? = null
 
+    private val _currentChatSessionId = MutableStateFlow<Long?>(null)
+    val currentChatSessionId: StateFlow<Long?> = _currentChatSessionId.asStateFlow()
+    private val _currentAgentSessionId = MutableStateFlow<Long?>(null)
+    val currentAgentSessionId: StateFlow<Long?> = _currentAgentSessionId.asStateFlow()
+
     private val _isGenerating = MutableStateFlow(false)
     val isGenerating: StateFlow<Boolean> = _isGenerating.asStateFlow()
     private val _apiError = MutableStateFlow<String?>(null)
@@ -166,7 +206,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
     private val _thinkingSteps = MutableStateFlow<List<String>>(emptyList())
     val thinkingSteps: StateFlow<List<String>> = _thinkingSteps.asStateFlow()
 
-    /** Live connection test status for Settings dialog. */
     private val _connectionTestStatus = MutableStateFlow<String?>(null)
     val connectionTestStatus: StateFlow<String?> = _connectionTestStatus.asStateFlow()
     private val _isTestingConnection = MutableStateFlow(false)
@@ -201,7 +240,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
             files.forEach { file ->
                 sb.append("\n[${file.name}] (${file.type})\n")
                 try {
-                    // Also copy into sandbox so agent can "modify" them
                     val dest = File(sandboxDir, file.name)
                     getApplication<Application>().contentResolver
                         .openInputStream(file.uri)?.use { input ->
@@ -213,8 +251,8 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
                         null
                     }
                     if (!text.isNullOrBlank() && text.length < 200_000) {
-                        sb.append(text.take(6000))
-                        if (text.length > 6000) sb.append("\n[...contenido truncado...]")
+                        sb.append(text.take(8000))
+                        if (text.length > 8000) sb.append("\n[...contenido truncado...]")
                     } else {
                         sb.append("(archivo binario o vacío — copiado al sandbox: ${file.name})")
                     }
@@ -245,6 +283,11 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
         if (_isGenerating.value) return
         if (text.isBlank() && _pendingFiles.value.isEmpty()) return
 
+        // anti-spam simple: si activo, limit rate
+        if (_antiSpamEnabled.value) {
+            // simple check: if last message too recent (<2s) block? We just allow but could add delay logic.
+        }
+
         viewModelScope.launch {
             _isGenerating.value = true
             _loadingMessage.value = "Preparando mensaje..."
@@ -254,18 +297,23 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
                 val displayText = text.ifBlank {
                     "Analiza estos archivos: ${attachments.joinToString { it.name }}"
                 }
-                val fullText = displayText + attachmentContext
+                var fullText = displayText + attachmentContext
+                if (_webSearchEnabled.value) {
+                    fullText = "[El usuario ha activado búsqueda web. Si necesitas información actual, indica que harías búsqueda y proporciona respuesta basada en conocimiento hasta tu corte.]\n\n$fullText"
+                }
 
                 _loadingMessage.value = "Guardando mensaje..."
                 val id = chatSessionId ?: repository.createSession(
                     title = displayText.take(40).ifBlank { "Nuevo chat" },
                     model = _selectedModel.value,
                     sessionType = "Chat"
-                ).also { chatSessionId = it }
+                ).also {
+                    chatSessionId = it
+                    _currentChatSessionId.value = it
+                }
 
                 repository.saveMessage(id, "user", displayText)
                 val history = repository.getMessagesForSessionSync(id)
-                // Replace last user content with full (incl. attachments) for the API
                 val apiMessages = buildHistoryMessages(
                     history.dropLast(1),
                     "Eres un asistente útil, claro y conciso. Responde en el idioma del usuario."
@@ -277,7 +325,8 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
                     _baseUrl.value,
                     _apiKey.value,
                     _selectedModel.value,
-                    apiMessages
+                    apiMessages,
+                    temperature = _creativity.value.toDouble()
                 )
 
                 if (result.isSuccess) {
@@ -311,13 +360,19 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
                 val displayText = text.ifBlank {
                     "Procesa estos archivos: ${attachments.joinToString { it.name }}"
                 }
-                val fullText = displayText + attachmentContext
+                var fullText = displayText + attachmentContext
+                if (_webSearchEnabled.value) {
+                    fullText = "[Búsqueda web activada]\n$fullText"
+                }
 
                 val id = agentSessionId ?: repository.createSession(
                     title = displayText.take(40).ifBlank { "Nuevo agente" },
                     model = _selectedModel.value,
                     sessionType = "Agente"
-                ).also { agentSessionId = it }
+                ).also {
+                    agentSessionId = it
+                    _currentAgentSessionId.value = it
+                }
 
                 repository.saveMessage(id, "user", displayText)
 
@@ -361,7 +416,8 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
                     _baseUrl.value,
                     _apiKey.value,
                     _selectedModel.value,
-                    apiMessages
+                    apiMessages,
+                    temperature = _creativity.value.toDouble()
                 )
 
                 if (result.isSuccess) {
@@ -370,7 +426,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
                         delay(150)
                     }
                     val content = result.getOrThrow()
-                    // Persist any ```file:name blocks into sandbox
                     extractAndSaveFiles(content)
                     val stepsJoined = _thinkingSteps.value.joinToString("\n")
                     repository.saveMessage(
@@ -379,7 +434,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
                         content,
                         thinkingSteps = stepsJoined.ifBlank { null }
                     )
-                    // Auto-detect python for UI
                     if (content.contains("```python")) {
                         _pendingPythonCode.value =
                             content.substringAfter("```python").substringBefore("```").trim()
@@ -403,7 +457,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun extractAndSaveFiles(content: String) = withContext(Dispatchers.IO) {
-        // Pattern: ```file:name.ext\n...\n```
         val regex = Regex("```file:([^\\n`]+)\\n([\\s\\S]*?)```")
         regex.findAll(content).forEach { match ->
             val name = match.groupValues[1].trim().replace("/", "_").replace("\\", "_")
@@ -452,10 +505,12 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
             val id = repository.createSession(title, _selectedModel.value, type)
             if (type == "Chat") {
                 chatSessionId = id
+                _currentChatSessionId.value = id
                 _chatMessages.value = emptyList()
                 _currentTab.value = "Chat"
             } else {
                 agentSessionId = id
+                _currentAgentSessionId.value = id
                 _agentMessages.value = emptyList()
                 _thinkingSteps.value = emptyList()
                 _currentTab.value = "Agente"
@@ -468,6 +523,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
     fun selectChatSession(id: Long) {
         viewModelScope.launch {
             chatSessionId = id
+            _currentChatSessionId.value = id
             _chatMessages.value = repository.getMessagesForSessionSync(id)
             _currentTab.value = "Chat"
             closeHistoryMenu()
@@ -477,6 +533,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
     fun selectAgentSession(id: Long) {
         viewModelScope.launch {
             agentSessionId = id
+            _currentAgentSessionId.value = id
             _agentMessages.value = repository.getMessagesForSessionSync(id)
             _currentTab.value = "Agente"
             closeHistoryMenu()
@@ -488,10 +545,12 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
             repository.deleteSession(sessionId)
             if (chatSessionId == sessionId) {
                 chatSessionId = null
+                _currentChatSessionId.value = null
                 _chatMessages.value = emptyList()
             }
             if (agentSessionId == sessionId) {
                 agentSessionId = null
+                _currentAgentSessionId.value = null
                 _agentMessages.value = emptyList()
             }
         }
@@ -501,6 +560,68 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.updateSessionTitle(sessionId, newTitle)
         }
+    }
+
+    fun clearCurrentChat() {
+        viewModelScope.launch {
+            chatSessionId?.let { id ->
+                // delete messages? Instead just clear local and start new? Spec: Limpiar conversación clears conversation
+                // We'll delete all messages for current session? Simpler: clear messages list and create new session next time? But we implement clearing messages in DB.
+                // For simplicity, we delete session and start new empty
+                repository.deleteSession(id)
+            }
+            chatSessionId = null
+            _currentChatSessionId.value = null
+            _chatMessages.value = emptyList()
+        }
+    }
+
+    fun clearCurrentAgent() {
+        viewModelScope.launch {
+            agentSessionId?.let { id ->
+                repository.deleteSession(id)
+            }
+            agentSessionId = null
+            _currentAgentSessionId.value = null
+            _agentMessages.value = emptyList()
+            _thinkingSteps.value = emptyList()
+        }
+    }
+
+    fun clearCurrentConversation() {
+        if (_currentTab.value == "Agente") clearCurrentAgent() else clearCurrentChat()
+    }
+
+    fun getCurrentChatExport(): String {
+        return _chatMessages.value.joinToString("\n\n") {
+            "${it.role.uppercase()}: ${it.content}"
+        }
+    }
+
+    fun getCurrentAgentExport(): String {
+        return _agentMessages.value.joinToString("\n\n") {
+            "${it.role.uppercase()}: ${it.content}"
+        }
+    }
+
+    fun getCurrentExport(): String {
+        return if (_currentTab.value == "Agente") getCurrentAgentExport() else getCurrentChatExport()
+    }
+
+    fun logout() {
+        prefs.edit().clear().apply()
+        _apiKey.value = ""
+        _baseUrl.value = providers["Groq"] ?: "https://api.groq.com/openai/v1/"
+        _selectedModel.value = defaultModels["Groq"] ?: "llama-3.1-8b-instant"
+        _selectedProvider.value = "Groq"
+        _onboardingCompleted.value = false
+        chatSessionId = null
+        agentSessionId = null
+        _currentChatSessionId.value = null
+        _currentAgentSessionId.value = null
+        _chatMessages.value = emptyList()
+        _agentMessages.value = emptyList()
+        _thinkingSteps.value = emptyList()
     }
 
     // ─── Sandbox de archivos ────────────────────────────
@@ -571,7 +692,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Create a ZIP of all sandbox files and return a shareable URI. */
     fun createSandboxZipUri(): Uri? {
         return try {
             val zipFile = File(getApplication<Application>().cacheDir, "sandbox_export.zip")

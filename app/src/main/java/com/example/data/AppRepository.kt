@@ -90,7 +90,8 @@ class AppRepository(private val chatDao: ChatDao) {
         baseUrl: String,
         apiKey: String,
         model: String,
-        messages: List<GroqMessage>
+        messages: List<GroqMessage>,
+        temperature: Double = 0.7
     ): Result<String> {
         return try {
             if (apiKey.isBlank()) {
@@ -99,7 +100,11 @@ class AppRepository(private val chatDao: ChatDao) {
                 )
             }
             val bearerToken = "Bearer $apiKey"
-            val request = GroqChatRequest(model = model, messages = messages)
+            val request = GroqChatRequest(
+                model = model,
+                messages = messages,
+                temperature = temperature.coerceIn(0.0, 2.0)
+            )
             val cleanBaseUrl = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
             val fullUrl = "${cleanBaseUrl}chat/completions"
             val response = groqService.getChatCompletion(fullUrl, bearerToken, request)
@@ -118,7 +123,7 @@ class AppRepository(private val chatDao: ChatDao) {
             } else {
                 val errorCode = response.code()
                 val errorBody = try {
-                    response.errorBody()?.string()?.take(300)
+                    response.errorBody()?.string()?.take(500)
                 } catch (_: Exception) {
                     null
                 }
@@ -140,7 +145,6 @@ class AppRepository(private val chatDao: ChatDao) {
         }
     }
 
-    /** Lightweight connectivity check used by Settings "Probar conexión". */
     suspend fun testConnection(
         baseUrl: String,
         apiKey: String,
@@ -150,7 +154,7 @@ class AppRepository(private val chatDao: ChatDao) {
             GroqMessage(role = "user", content = "Responde solo con la palabra: OK")
         )
         return getChatCompletion(baseUrl, apiKey, model, messages).map { raw ->
-            "Conexión exitosa. Modelo respondió: ${raw.take(80)}"
+            "Conexión exitosa. Modelo respondió: ${raw.take(120)}"
         }
     }
 }

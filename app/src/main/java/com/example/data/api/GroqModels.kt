@@ -14,7 +14,8 @@ data class GroqChatRequest(
     val model: String,
     val messages: List<GroqMessage>,
     val stream: Boolean = false,
-    val temperature: Double = 0.7
+    val temperature: Double = 0.7,
+    @Json(name = "max_tokens") val maxTokens: Int? = null
 )
 
 @JsonClass(generateAdapter = true)
