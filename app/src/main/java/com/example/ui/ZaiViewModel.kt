@@ -148,7 +148,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { repository.updateSessionTitle(sessionId, title) }
     }
 
-    // ─── Mensajes ───────────────────────────────────────
     fun sendChatMessage(text: String) {
         val sid = _chatSessionId.value
         viewModelScope.launch {
@@ -223,7 +222,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
         return apiMessages
     }
 
-    // Python sandbox
     fun executePython(code: String, callback: (String) -> Unit) {
         _pendingPythonCode = code
         _pythonCallback = callback
@@ -252,7 +250,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
         } catch (e: Exception) { null }
     }
 
-    // Workspace
     fun loadSandboxFiles() {
         viewModelScope.launch(Dispatchers.IO) {
             val files = sandboxDir.listFiles()?.map { FileItem(it.name, it.length(), it.lastModified()) }?.sortedByDescending { it.lastModified } ?: emptyList()
