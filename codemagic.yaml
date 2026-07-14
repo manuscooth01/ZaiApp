@@ -6,11 +6,15 @@ workflows:
     scripts:
       - name: Make gradlew executable
         script: chmod +x gradlew
+      - name: List all tasks (diagnostic)
+        script: |
+          ./gradlew tasks --all --no-configuration-cache
       - name: Build debug APK
-        script: ./gradlew assembleDebug
+        script: |
+          ./gradlew assembleDebug --no-configuration-cache
     artifacts:
       - app/build/outputs/apk/debug/app-debug.apk
     publishing:
       email:
         recipients:
-          - manucarrasquel66@gmail.com   # ← Cambia esto por tu correo real
+          - manucarrasquel66@gmail.com  # Cambia por tu correo real o elimina esta línea
