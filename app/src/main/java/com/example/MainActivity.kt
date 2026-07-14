@@ -158,10 +158,11 @@ fun OnboardingScreen(viewModel: ZaiViewModel, onFinish: () -> Unit) {
                         Text("Selecciona el proveedor e ingresa tu API Key.", textAlign = TextAlign.Center, color = Color.White)
                         Spacer(Modifier.height(16.dp))
                         var selected by remember { mutableStateOf("Groq") }
+                        var showProviderDropdown by remember { mutableStateOf(false) }
                         Box {
-                            OutlinedTextField(value = selected, onValueChange = {}, readOnly = true, modifier = Modifier.fillMaxWidth(), colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White))
-                            DropdownMenu(expanded = true, onDismissRequest = {}) {
-                                viewModel.providers.keys.forEach { p -> DropdownMenuItem(text = { Text(p) }, onClick = { selected = p; viewModel.setProvider(p) }) }
+                            OutlinedTextField(value = selected, onValueChange = {}, readOnly = true, modifier = Modifier.fillMaxWidth().clickable { showProviderDropdown = true }, colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White))
+                            DropdownMenu(expanded = showProviderDropdown, onDismissRequest = { showProviderDropdown = false }) {
+                                viewModel.providers.keys.forEach { p -> DropdownMenuItem(text = { Text(p) }, onClick = { selected = p; viewModel.setProvider(p); showProviderDropdown = false }) }
                             }
                         }
                         Spacer(Modifier.height(8.dp))
@@ -468,10 +469,11 @@ fun MoreTab(viewModel: ZaiViewModel) {
         val context = LocalContext.current
 
         Text("Proveedor", color = Color.White)
+        var showProviderDropdown by remember { mutableStateOf(false) }
         Box {
-            OutlinedTextField(prov, {}, readOnly = true, modifier = Modifier.fillMaxWidth(), colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White))
-            DropdownMenu(expanded = true, onDismissRequest = {}) {
-                viewModel.providers.keys.forEach { DropdownMenuItem(text = { Text(it) }, onClick = { prov = it; viewModel.setProvider(it); url = viewModel.baseUrl.value }) }
+            OutlinedTextField(prov, {}, readOnly = true, modifier = Modifier.fillMaxWidth().clickable { showProviderDropdown = true }, colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White))
+            DropdownMenu(expanded = showProviderDropdown, onDismissRequest = { showProviderDropdown = false }) {
+                viewModel.providers.keys.forEach { DropdownMenuItem(text = { Text(it) }, onClick = { prov = it; viewModel.setProvider(it); url = viewModel.baseUrl.value; showProviderDropdown = false }) }
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -524,3 +526,4 @@ fun InputBar(value: String, onValue: (String) -> Unit, onSend: () -> Unit, isGen
         }
     }
 }
+
