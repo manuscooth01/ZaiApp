@@ -9,6 +9,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -203,7 +204,7 @@ fun MainScreen(
     }
 }
 
-// ─── Markdown optimizado con remember ──────────────────────
+// ─── Markdown optimizado ─────────────────────────────────
 @Composable
 fun MarkdownText(text: String) {
     val annotated = remember(text) {
@@ -240,9 +241,13 @@ fun MarkdownText(text: String) {
     Text(annotated, fontSize = 14.sp)
 }
 
-// ─── Chat Directo optimizado ─────────────────────────────
+// ─── Chat Directo ────────────────────────────────────────
 @Composable
-fun ChatTabScreen(viewModel: ZaiViewModel, onStartDictation: ((String) -> Unit) -> Unit, onPickFile: () -> Unit) {
+fun ChatTabScreen(
+    viewModel: ZaiViewModel,
+    onStartDictation: ((String) -> Unit) -> Unit,
+    onPickFile: () -> Unit
+) {
     val activeMessages by viewModel.activeMessages.collectAsStateWithLifecycle()
     val isGenerating by viewModel.isGenerating.collectAsStateWithLifecycle()
     val selectedModel by viewModel.selectedModel.collectAsStateWithLifecycle()
@@ -253,7 +258,6 @@ fun ChatTabScreen(viewModel: ZaiViewModel, onStartDictation: ((String) -> Unit) 
     val coroutineScope = rememberCoroutineScope()
     val models = listOf("llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it", "deepseek-r1-distill-llama-70b", "llama-3.2-90b-vision-preview")
 
-    // Scroll más eficiente: solo cuando cambia el último mensaje
     val lastMessageId = activeMessages.lastOrNull()?.id
     LaunchedEffect(lastMessageId, isGenerating) {
         if (activeMessages.isNotEmpty()) {
@@ -287,16 +291,8 @@ fun ChatTabScreen(viewModel: ZaiViewModel, onStartDictation: ((String) -> Unit) 
                     Text("Pregunta directamente al modelo Groq sin demoras adicionales.", fontSize = 12.sp, color = Color(0xFFA1A1AA), textAlign = TextAlign.Center)
                 }
             } else {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(
-                        items = activeMessages,
-                        key = { it.id }   // clave única para eficiencia
-                    ) { message ->
+                LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(activeMessages, key = { it.id }) { message ->
                         ChatMessageBubble(message)
                     }
                     if (isGenerating) {
@@ -312,13 +308,32 @@ fun ChatTabScreen(viewModel: ZaiViewModel, onStartDictation: ((String) -> Unit) 
             }
         }
         if (apiKey.isBlank()) Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) { Text("No has configurado una API Key. Ve a Más -> Configuración.", color = MaterialTheme.colorScheme.onErrorContainer, fontSize = 11.sp, modifier = Modifier.padding(6.dp), textAlign = TextAlign.Center) }
-        ChatInputBar(value = textInput, onValueChange = { textInput = it }, onSend = { if (textInput.isNotBlank()) { viewModel.sendMessage(textInput); textInput = "" } }, isGenerating = isGenerating, onAttachFile = onPickFile, onStartDictation = onStartDictation, placeholder = "Mensaje...")
+
+        ChatInputBar(
+            value = textInput,
+            onValueChange = { textInput = it },
+            onSend = { if (textInput.isNotBlank()) { viewModel.sendMessage(textInput); textInput = "" } },
+            isGenerating = isGenerating,
+            onAttachFile = onPickFile,
+            onStartDictation = {
+                onStartDictation { spoken ->
+                    if (spoken.isNotBlank()) {
+                        textInput = if (textInput.isBlank()) spoken else "$textInput $spoken"
+                    }
+                }
+            },
+            placeholder = "Mensaje..."
+        )
     }
 }
 
-// ─── Agente optimizado ──────────────────────────────────
+// ─── Agente ──────────────────────────────────────────────
 @Composable
-fun AgentTabScreen(viewModel: ZaiViewModel, onStartDictation: ((String) -> Unit) -> Unit, onPickFile: () -> Unit) {
+fun AgentTabScreen(
+    viewModel: ZaiViewModel,
+    onStartDictation: ((String) -> Unit) -> Unit,
+    onPickFile: () -> Unit
+) {
     val activeMessages by viewModel.activeMessages.collectAsStateWithLifecycle()
     val isGenerating by viewModel.isGenerating.collectAsStateWithLifecycle()
     val selectedModel by viewModel.selectedModel.collectAsStateWithLifecycle()
@@ -363,16 +378,8 @@ fun AgentTabScreen(viewModel: ZaiViewModel, onStartDictation: ((String) -> Unit)
                     Text("Resuelve tareas complejas con Python real y manipulación de archivos.", fontSize = 12.sp, color = Color(0xFFA1A1AA), textAlign = TextAlign.Center)
                 }
             } else {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(
-                        items = activeMessages,
-                        key = { it.id }
-                    ) { message ->
+                LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(activeMessages, key = { it.id }) { message ->
                         ChatMessageBubble(message)
                     }
                     if (isGenerating) {
@@ -382,7 +389,22 @@ fun AgentTabScreen(viewModel: ZaiViewModel, onStartDictation: ((String) -> Unit)
             }
         }
         if (apiKey.isBlank()) Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) { Text("No has configurado una API Key.", color = MaterialTheme.colorScheme.onErrorContainer, fontSize = 11.sp, modifier = Modifier.padding(6.dp), textAlign = TextAlign.Center) }
-        ChatInputBar(value = textInput, onValueChange = { textInput = it }, onSend = { if (textInput.isNotBlank()) { viewModel.sendAgentMessage(textInput); textInput = "" } }, isGenerating = isGenerating, onAttachFile = onPickFile, onStartDictation = onStartDictation, placeholder = "Ordena una tarea al agente...")
+
+        ChatInputBar(
+            value = textInput,
+            onValueChange = { textInput = it },
+            onSend = { if (textInput.isNotBlank()) { viewModel.sendAgentMessage(textInput); textInput = "" } },
+            isGenerating = isGenerating,
+            onAttachFile = onPickFile,
+            onStartDictation = {
+                onStartDictation { spoken ->
+                    if (spoken.isNotBlank()) {
+                        textInput = if (textInput.isBlank()) spoken else "$textInput $spoken"
+                    }
+                }
+            },
+            placeholder = "Ordena una tarea al agente..."
+        )
     }
 }
 
@@ -442,7 +464,7 @@ fun WorkspaceTabScreen(viewModel: ZaiViewModel) {
     }
 }
 
-// ─── Historial optimizado ─────────────────────────────────
+// ─── Historial ───────────────────────────────────────────
 @Composable
 fun HistoryTabScreen(viewModel: ZaiViewModel, onSessionSelected: (Long) -> Unit) {
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
@@ -485,7 +507,7 @@ fun HistoryTabScreen(viewModel: ZaiViewModel, onSessionSelected: (Long) -> Unit)
     }
 }
 
-// ─── Más (sin cambios, pero con lista optimizada donde aplique) ─
+// ─── Más ─────────────────────────────────────────────────
 @Composable
 fun MoreTabScreen(viewModel: ZaiViewModel) {
     var subScreen by remember { mutableStateOf(MoreScreen.MENU) }
@@ -541,7 +563,15 @@ fun ChatMessageBubble(message: ChatMessage) {
 }
 
 @Composable
-fun ChatInputBar(value: String, onValueChange: (String) -> Unit, onSend: () -> Unit, isGenerating: Boolean, onAttachFile: () -> Unit, onStartDictation: () -> Unit, placeholder: String) {
+fun ChatInputBar(
+    value: String,
+    onValueChange: (String) -> Unit,
+    onSend: () -> Unit,
+    isGenerating: Boolean,
+    onAttachFile: () -> Unit,
+    onStartDictation: () -> Unit,
+    placeholder: String
+) {
     Surface(color = Color(0xFF18181B), border = BorderStroke(1.dp, Color(0xFF52525B)), shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth().padding(8.dp)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onAttachFile, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.AttachFile, null, tint = Color(0xFFA1A1AA)) }
@@ -563,7 +593,7 @@ fun ThinkingStepsLoader(steps: List<String>) {
     }
 }
 
-// ─── Settings, Models, etc. (sin cambios importantes) ─────
+// ─── Settings, Models, Help, etc. (sin cambios) ──────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsTabScreen(viewModel: ZaiViewModel) {
@@ -586,15 +616,17 @@ fun SettingsTabScreen(viewModel: ZaiViewModel) {
     }
 }
 
-@Composable fun ModelsInfoScreen() {
-    LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { Text("Modelos Soportados", fontWeight = FontWeight.Bold, color = Color(0xFFFF5722), fontSize = 16.sp) }
-        item { Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF18181B))) { Column(Modifier.padding(14.dp)) { Text("llama-3.3-70b-versatile", fontWeight = FontWeight.Bold, color = Color(0xFFFF5722), fontFamily = FontFamily.Monospace); Text("Meta, lógica compleja") } } }
-        item { Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF18181B))) { Column(Modifier.padding(14.dp)) { Text("llama-3.1-8b-instant", fontWeight = FontWeight.Bold, color = Color(0xFFFF5722), fontFamily = FontFamily.Monospace); Text("Meta, rápido") } } }
-        item { Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF18181B))) { Column(Modifier.padding(14.dp)) { Text("gemma2-9b-it", fontWeight = FontWeight.Bold, color = Color(0xFFFF5722), fontFamily = FontFamily.Monospace); Text("Google, español natural") } } }
-        item { Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF18181B))) { Column(Modifier.padding(14.dp)) { Text("deepseek-r1-distill-llama-70b", fontWeight = FontWeight.Bold, color = Color(0xFFFF5722), fontFamily = FontFamily.Monospace); Text("DeepSeek, razonamiento") } } }
-        item { Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF18181B))) { Column(Modifier.padding(14.dp)) { Text("llama-3.2-90b-vision-preview", fontWeight = FontWeight.Bold, color = Color(0xFFFF5722), fontFamily = FontFamily.Monospace); Text("Meta, visión") } } }
-    }
+@Composable fun ModelsInfoScreen() = LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    item { Text("Modelos Soportados", fontWeight = FontWeight.Bold, color = Color(0xFFFF5722), fontSize = 16.sp) }
+    item { ModelInfoCard("llama-3.3-70b-versatile", "Meta, lógica compleja") }
+    item { ModelInfoCard("llama-3.1-8b-instant", "Meta, rápido") }
+    item { ModelInfoCard("gemma2-9b-it", "Google, español natural") }
+    item { ModelInfoCard("deepseek-r1-distill-llama-70b", "DeepSeek, razonamiento") }
+    item { ModelInfoCard("llama-3.2-90b-vision-preview", "Meta, visión") }
+}
+
+@Composable fun ModelInfoCard(name: String, desc: String) = Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF18181B))) {
+    Column(Modifier.padding(14.dp)) { Text(name, fontWeight = FontWeight.Bold, color = Color(0xFFFF5722), fontFamily = FontFamily.Monospace); Text(desc, color = Color.White) }
 }
 
 @Composable fun ProvidersScreen() = Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -605,9 +637,11 @@ fun SettingsTabScreen(viewModel: ZaiViewModel) {
 
 @Composable fun HelpScreen() = LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
     item { Text("Ayuda", fontWeight = FontWeight.Bold, color = Color(0xFFFF5722), fontSize = 16.sp) }
-    item { Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF18181B))) { Column(Modifier.padding(14.dp)) { Text("Markdown", fontWeight = FontWeight.Bold, color = Color(0xFFFF5722)); Text("**negrita** *cursiva* `codigo`") } } }
-    item { Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF18181B))) { Column(Modifier.padding(14.dp)) { Text("Python Sandbox", fontWeight = FontWeight.Bold, color = Color(0xFFFF5722)); Text("La IA puede ejecutar código Python real para manipular archivos.") } } }
+    item { HelpCard("Markdown", "**negrita** *cursiva* `codigo`") }
+    item { HelpCard("Python Sandbox", "La IA puede ejecutar código Python real para manipular archivos.") }
 }
+
+@Composable fun HelpCard(title: String, desc: String) = Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF18181B))) { Column(Modifier.padding(14.dp)) { Text(title, fontWeight = FontWeight.Bold, color = Color(0xFFFF5722)); Text(desc, color = Color.White) } }
 
 @Composable fun SupportScreen() = Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
     Text("Soporte", fontWeight = FontWeight.Bold, color = Color(0xFFFF5722), fontSize = 16.sp)
@@ -622,5 +656,5 @@ fun SettingsTabScreen(viewModel: ZaiViewModel) {
     Spacer(Modifier.height(24.dp))
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF18181B))) { Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) { Text("Herramientas reales para IA sin límites", textAlign = TextAlign.Center, color = Color.White); Spacer(Modifier.height(16.dp)); HorizontalDivider(color = Color(0xFF52525B)); Spacer(Modifier.height(16.dp)); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) { Text("Android", color = Color(0xFFFF5722)); Text("Kotlin", color = Color(0xFFFF5722)); Text("Compose", color = Color(0xFFFF5722)) } } }
     Spacer(Modifier.height(16.dp))
-    Text("Versión 3.0.0", color = Color(0xFFA1A1AA))
+    Text("Versión 3.0.1", color = Color(0xFFA1A1AA))
 }
