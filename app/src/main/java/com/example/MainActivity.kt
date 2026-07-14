@@ -552,13 +552,72 @@ fun SubScreen(title: String, onBack: () -> Unit, content: @Composable () -> Unit
 fun ChatMessageBubble(message: ChatMessage) {
     val isUser = message.role == "user"
     val formattedTime = remember(message.timestamp) { SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.timestamp)) }
+    var showSandbox by remember { mutableStateOf(false) }
+    var pythonCode by remember { mutableStateOf("") }
+    var sandboxOutput by remember { mutableStateOf("") }
+
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start, verticalAlignment = Alignment.Top) {
         if (!isUser) { Box(Modifier.size(32.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFF18181B)), contentAlignment = Alignment.Center) { Icon(Icons.Default.SmartToy, null, tint = Color(0xFFFF5722), modifier = Modifier.size(18.dp)) }; Spacer(Modifier.width(8.dp)) }
         Column(Modifier.fillMaxWidth(if (isUser) 0.85f else 0.78f), horizontalAlignment = if (isUser) Alignment.End else Alignment.Start) {
-            Card(colors = CardDefaults.cardColors(containerColor = if (isUser) Color(0xFF242427) else Color(0xFF18181B)), border = BorderStroke(1.dp, Color(0xFF52525B)), shape = RoundedCornerShape(16.dp).let { if (isUser) RoundedCornerShape(16.dp, 16.dp, 16.dp, 0.dp) else RoundedCornerShape(16.dp, 16.dp, 0.dp, 16.dp) }) { Column(Modifier.padding(12.dp)) { MarkdownText(message.content) } }
+            Card(colors = CardDefaults.cardColors(containerColor = if (isUser) Color(0xFF242427) else Color(0xFF18181B)), border = BorderStroke(1.dp, Color(0xFF52525B)), shape = RoundedCornerShape(16.dp).let { if (isUser) RoundedCornerShape(16.dp, 16.dp, 16.dp, 0.dp) else RoundedCornerShape(16.dp, 16.dp, 0.dp, 16.dp) }) {
+                Column(Modifier.padding(12.dp)) {
+                    MarkdownText(message.content)
+                    
+                    // Botón para ejecutar código Python si existe un bloque ```python
+                    if (!isUser && message.content.contains("```python")) {
+                        Spacer(Modifier.height(8.dp))
+                        Button(
+                            onClick = {
+                                // Extraer el primer bloque de código Python
+                                val start = message.content.indexOf("```python")
+                                if (start != -1) {
+                                    val end = message.content.indexOf("```", start + 9)
+                                    if (end != -1) {
+                                        pythonCode = message.content.substring(start + 9, end).trim()
+                                        showSandbox = true
+                                    }
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5722))
+                        ) {
+                            Icon(Icons.Default.PlayArrow, null)
+                            Spacer(Modifier.width(4.dp))
+                            Text("Ejecutar en Sandbox")
+                        }
+                    }
+                }
+            }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp, start = 4.dp, end = 4.dp)) { Text(if (isUser) "Tú" else "Groq", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = if (isUser) Color(0xFFFF5722) else Color(0xFFA1A1AA)); Spacer(Modifier.width(4.dp)); Text("• $formattedTime", fontSize = 9.sp, color = Color(0xFFA1A1AA)) }
         }
         if (isUser) { Spacer(Modifier.width(8.dp)); Box(Modifier.size(32.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFFFF5722).copy(alpha = 0.15f)), contentAlignment = Alignment.Center) { Icon(Icons.Default.Person, null, tint = Color(0xFFFF5722), modifier = Modifier.size(18.dp)) } }
+    }
+
+    // Diálogo del Sandbox Python
+    if (showSandbox) {
+        Dialog(onDismissRequest = { showSandbox = false }) {
+            Card(Modifier.fillMaxWidth().heightIn(max = 500.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF18181B)), border = BorderStroke(1.dp, Color(0xFF52525B)), shape = RoundedCornerShape(16.dp)) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Sandbox Python", fontWeight = FontWeight.Bold, color = Color(0xFFFF5722))
+                    Spacer(Modifier.height(8.dp))
+                    AndroidView(
+                        factory = { ctx ->
+                            SandboxWebView(ctx).also {
+                                it.loadPyodide()
+                                it.execute(pythonCode) { result ->
+                                    sandboxOutput = result
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(350.dp)
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text("Salida:", color = Color.White, fontWeight = FontWeight.Bold)
+                    Box(Modifier.fillMaxWidth().heightIn(min = 60.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF0D0D0D)).padding(8.dp)) {
+                        Text(sandboxOutput.ifBlank { "Ejecutando..." }, color = Color.White, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
     }
 }
 
