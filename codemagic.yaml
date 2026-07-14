@@ -18,3 +18,7 @@ workflows:
       email:
         recipients:
           - manucarrasquel66@gmail.com  # Cambia por tu correo real o elimina esta línea
+    publishing:
+      email:
+        recipients:
+          - manucarrasquel66@gmail.com
