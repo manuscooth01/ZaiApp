@@ -12,12 +12,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -28,7 +26,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -45,8 +42,6 @@ import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.database.ChatMessage
-import com.example.data.database.ChatSession
-import com.example.ui.FileItem
 import com.example.ui.SandboxWebView
 import com.example.ui.ZaiViewModel
 import com.example.ui.theme.MyApplicationTheme
@@ -55,6 +50,7 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.zip.ZipInputStream
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     companion object {
@@ -207,42 +203,44 @@ fun MainScreen(
     }
 }
 
-// ─── UTILIDADES ────────────────────────────────────────────
+// ─── Markdown optimizado con remember ──────────────────────
 @Composable
 fun MarkdownText(text: String) {
-    val annotated = buildAnnotatedString {
-        var i = 0
-        while (i < text.length) {
-            when {
-                text.startsWith("**", i) -> {
-                    val end = text.indexOf("**", i + 2)
-                    if (end != -1) {
-                        withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Color.White)) { append(text.substring(i + 2, end)) }
-                        i = end + 2
-                    } else { append(text[i]); i++ }
+    val annotated = remember(text) {
+        buildAnnotatedString {
+            var i = 0
+            while (i < text.length) {
+                when {
+                    text.startsWith("**", i) -> {
+                        val end = text.indexOf("**", i + 2)
+                        if (end != -1) {
+                            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Color.White)) { append(text.substring(i + 2, end)) }
+                            i = end + 2
+                        } else { append(text[i]); i++ }
+                    }
+                    text.startsWith("*", i) && i + 1 < text.length && text[i + 1] != '*' -> {
+                        val end = text.indexOf("*", i + 1)
+                        if (end != -1) {
+                            withStyle(SpanStyle(fontStyle = FontStyle.Italic, color = Color.White)) { append(text.substring(i + 1, end)) }
+                            i = end + 1
+                        } else { append(text[i]); i++ }
+                    }
+                    text.startsWith("`", i) -> {
+                        val end = text.indexOf("`", i + 1)
+                        if (end != -1) {
+                            withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = Color(0xFF242427), color = Color(0xFFFF5722))) { append(text.substring(i + 1, end)) }
+                            i = end + 1
+                        } else { append(text[i]); i++ }
+                    }
+                    else -> { append(text[i]); i++ }
                 }
-                text.startsWith("*", i) && i + 1 < text.length && text[i + 1] != '*' -> {
-                    val end = text.indexOf("*", i + 1)
-                    if (end != -1) {
-                        withStyle(SpanStyle(fontStyle = FontStyle.Italic, color = Color.White)) { append(text.substring(i + 1, end)) }
-                        i = end + 1
-                    } else { append(text[i]); i++ }
-                }
-                text.startsWith("`", i) -> {
-                    val end = text.indexOf("`", i + 1)
-                    if (end != -1) {
-                        withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = Color(0xFF242427), color = Color(0xFFFF5722))) { append(text.substring(i + 1, end)) }
-                        i = end + 1
-                    } else { append(text[i]); i++ }
-                }
-                else -> { append(text[i]); i++ }
             }
         }
     }
     Text(annotated, fontSize = 14.sp)
 }
 
-// ─── CHAT DIRECTO ──────────────────────────────────────────
+// ─── Chat Directo optimizado ─────────────────────────────
 @Composable
 fun ChatTabScreen(viewModel: ZaiViewModel, onStartDictation: ((String) -> Unit) -> Unit, onPickFile: () -> Unit) {
     val activeMessages by viewModel.activeMessages.collectAsStateWithLifecycle()
@@ -252,9 +250,18 @@ fun ChatTabScreen(viewModel: ZaiViewModel, onStartDictation: ((String) -> Unit) 
     var textInput by remember { mutableStateOf("") }
     var showModelDropdown by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
     val models = listOf("llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it", "deepseek-r1-distill-llama-70b", "llama-3.2-90b-vision-preview")
 
-    LaunchedEffect(activeMessages.size, isGenerating) { if (activeMessages.isNotEmpty()) listState.animateScrollToItem(activeMessages.size - 1) }
+    // Scroll más eficiente: solo cuando cambia el último mensaje
+    val lastMessageId = activeMessages.lastOrNull()?.id
+    LaunchedEffect(lastMessageId, isGenerating) {
+        if (activeMessages.isNotEmpty()) {
+            coroutineScope.launch {
+                listState.animateScrollToItem(activeMessages.size - 1)
+            }
+        }
+    }
 
     Column(Modifier.fillMaxSize()) {
         Surface(color = Color(0xFF18181B), border = BorderStroke(1.dp, Color(0xFF52525B)), modifier = Modifier.fillMaxWidth()) {
@@ -280,9 +287,27 @@ fun ChatTabScreen(viewModel: ZaiViewModel, onStartDictation: ((String) -> Unit) 
                     Text("Pregunta directamente al modelo Groq sin demoras adicionales.", fontSize = 12.sp, color = Color(0xFFA1A1AA), textAlign = TextAlign.Center)
                 }
             } else {
-                LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(activeMessages) { ChatMessageBubble(it) }
-                    if (isGenerating) { item { Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.Start) { CircularProgressIndicator(Modifier.size(20.dp), color = Color(0xFFFF5722), strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text("Groq respondiendo...", color = Color(0xFFA1A1AA), fontSize = 12.sp) } } }
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(
+                        items = activeMessages,
+                        key = { it.id }   // clave única para eficiencia
+                    ) { message ->
+                        ChatMessageBubble(message)
+                    }
+                    if (isGenerating) {
+                        item(key = "loading") {
+                            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.Start) {
+                                CircularProgressIndicator(Modifier.size(20.dp), color = Color(0xFFFF5722), strokeWidth = 2.dp)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Groq respondiendo...", color = Color(0xFFA1A1AA), fontSize = 12.sp)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -291,7 +316,7 @@ fun ChatTabScreen(viewModel: ZaiViewModel, onStartDictation: ((String) -> Unit) 
     }
 }
 
-// ─── AGENTE ────────────────────────────────────────────────
+// ─── Agente optimizado ──────────────────────────────────
 @Composable
 fun AgentTabScreen(viewModel: ZaiViewModel, onStartDictation: ((String) -> Unit) -> Unit, onPickFile: () -> Unit) {
     val activeMessages by viewModel.activeMessages.collectAsStateWithLifecycle()
@@ -301,11 +326,18 @@ fun AgentTabScreen(viewModel: ZaiViewModel, onStartDictation: ((String) -> Unit)
     val thinkingSteps by viewModel.currentThinkingSteps.collectAsStateWithLifecycle()
     var textInput by remember { mutableStateOf("") }
     var showModelDropdown by remember { mutableStateOf(false) }
-    var showSandbox by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
     val models = listOf("llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it", "deepseek-r1-distill-llama-70b", "llama-3.2-90b-vision-preview")
 
-    LaunchedEffect(activeMessages.size, isGenerating) { if (activeMessages.isNotEmpty()) listState.animateScrollToItem(activeMessages.size - 1) }
+    val lastMessageId = activeMessages.lastOrNull()?.id
+    LaunchedEffect(lastMessageId, isGenerating) {
+        if (activeMessages.isNotEmpty()) {
+            coroutineScope.launch {
+                listState.animateScrollToItem(activeMessages.size - 1)
+            }
+        }
+    }
 
     Column(Modifier.fillMaxSize()) {
         Surface(color = Color(0xFF18181B), border = BorderStroke(1.dp, Color(0xFF52525B)), modifier = Modifier.fillMaxWidth()) {
@@ -331,29 +363,30 @@ fun AgentTabScreen(viewModel: ZaiViewModel, onStartDictation: ((String) -> Unit)
                     Text("Resuelve tareas complejas con Python real y manipulación de archivos.", fontSize = 12.sp, color = Color(0xFFA1A1AA), textAlign = TextAlign.Center)
                 }
             } else {
-                LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(activeMessages) { ChatMessageBubble(it) }
-                    if (isGenerating) { item { ThinkingStepsLoader(thinkingSteps) } }
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(
+                        items = activeMessages,
+                        key = { it.id }
+                    ) { message ->
+                        ChatMessageBubble(message)
+                    }
+                    if (isGenerating) {
+                        item(key = "thinking") { ThinkingStepsLoader(thinkingSteps) }
+                    }
                 }
             }
         }
         if (apiKey.isBlank()) Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) { Text("No has configurado una API Key.", color = MaterialTheme.colorScheme.onErrorContainer, fontSize = 11.sp, modifier = Modifier.padding(6.dp), textAlign = TextAlign.Center) }
         ChatInputBar(value = textInput, onValueChange = { textInput = it }, onSend = { if (textInput.isNotBlank()) { viewModel.sendAgentMessage(textInput); textInput = "" } }, isGenerating = isGenerating, onAttachFile = onPickFile, onStartDictation = onStartDictation, placeholder = "Ordena una tarea al agente...")
     }
-    if (showSandbox) {
-        Dialog(onDismissRequest = { showSandbox = false }) {
-            Card(Modifier.fillMaxWidth().heightIn(max = 500.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF18181B)), border = BorderStroke(1.dp, Color(0xFF52525B)), shape = RoundedCornerShape(16.dp)) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("Python Sandbox", fontWeight = FontWeight.Bold, color = Color(0xFFFF5722))
-                    Spacer(Modifier.height(8.dp))
-                    AndroidView(factory = { ctx -> SandboxWebView(ctx).also { it.loadPyodide() } }, modifier = Modifier.fillMaxWidth().height(400.dp))
-                }
-            }
-        }
-    }
 }
 
-// ─── ESPACIO DE TRABAJO ────────────────────────────────────
+// ─── Workspace ───────────────────────────────────────────
 @Composable
 fun WorkspaceTabScreen(viewModel: ZaiViewModel) {
     val files by viewModel.sandboxFiles.collectAsStateWithLifecycle()
@@ -370,7 +403,7 @@ fun WorkspaceTabScreen(viewModel: ZaiViewModel) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { Text("No hay archivos. Adjunta un ZIP, APK o archivo desde el chat.", color = Color(0xFFA1A1AA), textAlign = TextAlign.Center) }
         } else {
             LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(files) { file ->
+                items(files, key = { it.name }) { file ->
                     Card(Modifier.fillMaxWidth().clickable {
                         selectedFileName = file.name
                         fileContent = viewModel.readSandboxFileContent(file.name) ?: ""
@@ -409,7 +442,7 @@ fun WorkspaceTabScreen(viewModel: ZaiViewModel) {
     }
 }
 
-// ─── HISTORIAL ─────────────────────────────────────────────
+// ─── Historial optimizado ─────────────────────────────────
 @Composable
 fun HistoryTabScreen(viewModel: ZaiViewModel, onSessionSelected: (Long) -> Unit) {
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
@@ -422,7 +455,7 @@ fun HistoryTabScreen(viewModel: ZaiViewModel, onSessionSelected: (Long) -> Unit)
         Spacer(Modifier.height(16.dp))
         if (sessions.isEmpty()) Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { Text("No hay conversaciones guardadas.", color = Color(0xFFA1A1AA)) }
         else LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(sessions) { session ->
+            items(sessions, key = { it.id }) { session ->
                 val isActive = session.id == activeSessionId
                 Card(Modifier.fillMaxWidth().clickable { viewModel.selectSession(session.id); onSessionSelected(session.id) }, colors = CardDefaults.cardColors(containerColor = if (isActive) Color(0xFF242427) else Color(0xFF18181B)), border = BorderStroke(1.dp, if (isActive) Color(0xFFFF5722) else Color(0xFF52525B))) {
                     Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
@@ -452,7 +485,7 @@ fun HistoryTabScreen(viewModel: ZaiViewModel, onSessionSelected: (Long) -> Unit)
     }
 }
 
-// ─── MÁS ───────────────────────────────────────────────────
+// ─── Más (sin cambios, pero con lista optimizada donde aplique) ─
 @Composable
 fun MoreTabScreen(viewModel: ZaiViewModel) {
     var subScreen by remember { mutableStateOf(MoreScreen.MENU) }
@@ -530,7 +563,7 @@ fun ThinkingStepsLoader(steps: List<String>) {
     }
 }
 
-// Secciones de Más (Settings, Models, etc.) simplificadas por brevedad. Se mantienen como antes.
+// ─── Settings, Models, etc. (sin cambios importantes) ─────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsTabScreen(viewModel: ZaiViewModel) {
