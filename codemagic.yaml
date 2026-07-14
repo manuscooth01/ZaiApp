@@ -1,20 +1,20 @@
 workflows:
-  android-workflow:
-    name: Android APK Workflow
-    max_build_duration: 60
+  build-android:
+    name: Build Android APK
     environment:
       vars:
-        JAVA_VERSION: "17"
-    triggering:
-      events:
-        - push
-      branch_patterns:
-        - pattern: main
+        # Aquí puedes poner variables de entorno si las necesitas, p. ej.:
+        # GROQ_API_KEY: "tu_clave_real"
+      java: 17
+      android_sdk_tools: 11076708_latest
     scripts:
-      - name: Limpiar y compilar APK
-        script: |
-          sed -i 's/\r$//' gradlew
-          chmod +x gradlew
-          ./gradlew assembleDebug --no-configuration-cache
+      - name: Make gradlew executable
+        script: chmod +x gradlew
+      - name: Build debug APK
+        script: ./gradlew assembleDebug
     artifacts:
-      - app/build/outputs/apk/**/*.apk
+      - app/build/outputs/apk/debug/app-debug.apk
+    publishing:
+      email:
+        recipients:
+          - tu_correo@example.com
