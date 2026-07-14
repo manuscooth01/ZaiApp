@@ -4,10 +4,17 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # Ajusta si prefieres otra ruta; usamos runner.temp para evitar problemas de permisos
+      ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -18,8 +25,52 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Grant execute permission
+      - name: Grant execute permission for Gradle wrapper
         run: chmod +x ./gradlew
 
-      - name: Build debug APK
-        run: ./gradlew assembleDebug
+      - name: Download Android command-line tools
+        run: |
+          set -e
+          mkdir -p "$ANDROID_SDK_ROOT"
+          cd /tmp
+          curl -sSfL "https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip" -o commandlinetools.zip
+          unzip -q commandlinetools.zip
+          mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools/latest"
+          mv cmdline-tools/* "$ANDROID_SDK_ROOT/cmdline-tools/latest/"
+
+      - name: Add Android tools to PATH
+        # Persist path for following steps
+        run: |
+          echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
+
+      - name: Install Android SDK components and accept licenses
+        run: |
+          set -e
+          # Espera que sdkmanager esté en $ANDROID_SDK_ROOT/cmdline-tools/latest/bin
+          sdkmanager --sdk_root="$ANDROID_SDK_ROOT" --version
+          # Instala componentes necesarios (ajusta api/build-tools según tu proyecto)
+          yes | sdkmanager --sdk_root="$ANDROID_SDK_ROOT" --licenses
+          sdkmanager --sdk_root="$ANDROID_SDK_ROOT" "platform-tools" "platforms;android-33" "build-tools;33.0.2"
+        shell: bash
+
+      - name: Verify Android SDK installation
+        run: |
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          ls -la "$ANDROID_SDK_ROOT"
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_SDK_ROOT" --list
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Build debug APK (verbose)
+        run: ./gradlew assembleDebug --no-daemon --stacktrace --info
+        env:
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
