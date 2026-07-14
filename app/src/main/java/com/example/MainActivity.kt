@@ -10,7 +10,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -50,12 +49,39 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 class MainActivity : ComponentActivity() {
-    // Callbacks para dictado y archivos
-    private var speechCallback: ((String) -> Unit)? = null
-    private var onFilesPicked: ((List<Uri>) -> Unit)? = null
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        setContent {
+            MyApplicationTheme {
+                MainApp()
+            }
+        }
+    }
+}
 
-    private val speechLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
+@Composable
+fun MainApp() {
+    val viewModel: ZaiViewModel = viewModel()
+    val onboardingDone by viewModel.onboardingCompleted.collectAsStateWithLifecycle()
+    var showOnboarding by remember { mutableStateOf(!onboardingDone) }
+    val context = LocalContext.current
+
+    // Lanzador de archivos
+    val filePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris ->
+        uris.forEach { uri ->
+            val name = getFileName(context, uri) ?: "archivo"
+            val type = context.contentResolver.getType(uri) ?: "*/*"
+            viewModel.addPendingFile(AttachedFile(uri, name, type))
+        }
+    }
+
+    // Lanzador de dictado
+    var speechCallback by remember { mutableStateOf<((String) -> Unit)?>(null) }
+    val speechLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == RESULT_OK) {
             val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull() ?: ""
@@ -63,85 +89,37 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private val filePicker = registerForActivityResult(
-        ActivityResultContracts.GetMultipleContents()
-    ) { uris: List<Uri> ->
-        onFilesPicked?.invoke(uris)
-    }
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
-        setContent {
-            MyApplicationTheme {
-                MainApp(
-                    onPickFile = { filePicker.launch(arrayOf("*/*")) },
-                    onStartDictation = { cb ->
-                        speechCallback = cb
-                        try {
-                            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "es-ES")
-                                putExtra(RecognizerIntent.EXTRA_PROMPT, "Dicta tu mensaje...")
-                            }
-                            speechLauncher.launch(intent)
-                        } catch (e: Exception) {
-                            Toast.makeText(this, "Dictado no soportado", Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    onFilesSelected = { list ->
-                        list.forEach { uri ->
-                            val name = getFileName(uri) ?: "archivo"
-                            val type = contentResolver.getType(uri) ?: "*/*"
-                            onFilesPickedInternal(uri, name, type)
-                        }
-                    }
-                )
-            }
-        }
-    }
-
-    private fun getFileName(uri: Uri): String? {
-        val cursor = contentResolver.query(uri, null, null, null, null)
-        return cursor?.use {
-            if (it.moveToFirst()) {
-                val idx = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (idx >= 0) it.getString(idx) else null
-            } else null
-        }
-    }
-
-    // Esta función se conectará con el ViewModel
-    private fun onFilesPickedInternal(uri: Uri, name: String, type: String) {
-        // La comunicaremos a través de una variable estática o mejor usando un callback en el Compose
-    }
-}
-
-@Composable
-fun MainApp(
-    onPickFile: () -> Unit,
-    onStartDictation: ((String) -> Unit) -> Unit,
-    onFilesSelected: (List<Uri>) -> Unit
-) {
-    val viewModel: ZaiViewModel = viewModel()
-    val onboardingDone by viewModel.onboardingCompleted.collectAsStateWithLifecycle()
-    var showOnboarding by remember { mutableStateOf(!onboardingDone) }
-
-    // Configuramos el callback de archivos una vez que tengamos el ViewModel
-    LaunchedEffect(Unit) {
-        (LocalContext.current as? MainActivity)?.onFilesPicked = { uris ->
-            uris.forEach { uri ->
-                val name = (LocalContext.current as? MainActivity)?.getFileName(uri) ?: "archivo"
-                val type = (LocalContext.current as? MainActivity)?.contentResolver?.getType(uri) ?: "*/*"
-                viewModel.addPendingFile(AttachedFile(uri, name, type))
-            }
-        }
-    }
-
     if (showOnboarding) {
         OnboardingScreen(viewModel) { showOnboarding = false }
     } else {
-        MainScreen(viewModel, onPickFile, onStartDictation)
+        MainScreen(
+            viewModel = viewModel,
+            onPickFile = { filePicker.launch("*/*") },
+            onStartDictation = { callback ->
+                speechCallback = callback
+                try {
+                    val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                        putExtra(RecognizerIntent.EXTRA_LANGUAGE, "es-ES")
+                        putExtra(RecognizerIntent.EXTRA_PROMPT, "Dicta tu mensaje...")
+                    }
+                    speechLauncher.launch(intent)
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Dictado no soportado", Toast.LENGTH_SHORT).show()
+                }
+            }
+        )
+    }
+}
+
+// Función auxiliar para obtener nombre de archivo
+fun getFileName(context: android.content.Context, uri: Uri): String? {
+    val cursor = context.contentResolver.query(uri, null, null, null, null)
+    return cursor?.use {
+        if (it.moveToFirst()) {
+            val idx = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (idx >= 0) it.getString(idx) else null
+        } else null
     }
 }
 
