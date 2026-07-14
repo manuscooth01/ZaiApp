@@ -17,6 +17,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
+data class AttachedFile(val uri: Uri, val name: String, val type: String)
+data class FileItem(val name: String, val sizeBytes: Long, val lastModified: Long)
+
 class ZaiViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository: AppRepository
@@ -80,11 +83,13 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
     fun addPendingFile(file: AttachedFile) {
         _pendingFiles.value = _pendingFiles.value + file
     }
+
     fun removePendingFile(index: Int) {
-        _pendingFiles.value = _pendingFiles.value.toMutableList().apply {
-            if (index in indices) removeAt(index)
+        _pendingFiles.value = _pendingFiles.value.toMutableList().also {
+            if (index in it.indices) it.removeAt(index)
         }
     }
+
     fun clearPendingFiles() {
         _pendingFiles.value = emptyList()
     }
