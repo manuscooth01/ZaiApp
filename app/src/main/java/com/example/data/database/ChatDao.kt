@@ -8,6 +8,9 @@ interface ChatDao {
     @Query("SELECT * FROM chat_sessions ORDER BY timestamp DESC")
     fun getAllSessions(): Flow<List<ChatSession>>
 
+    @Query("SELECT * FROM chat_sessions WHERE sessionType = :type ORDER BY timestamp DESC")
+    fun getSessionsByType(type: String): Flow<List<ChatSession>>
+
     @Query("SELECT * FROM chat_sessions WHERE id = :sessionId LIMIT 1")
     suspend fun getSessionById(sessionId: Long): ChatSession?
 
@@ -31,4 +34,7 @@ interface ChatDao {
 
     @Query("UPDATE chat_sessions SET title = :newTitle WHERE id = :sessionId")
     suspend fun updateSessionTitle(sessionId: Long, newTitle: String)
+
+    @Query("UPDATE chat_sessions SET timestamp = :ts WHERE id = :sessionId")
+    suspend fun touchSession(sessionId: Long, ts: Long = System.currentTimeMillis())
 }

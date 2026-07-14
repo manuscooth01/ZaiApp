@@ -1,21 +1,59 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# GroqApp
 
-# Run and deploy your AI Studio app
+App Android nativa (Kotlin + Jetpack Compose + Material 3) para chatear con la API de Groq (y otros proveedores compatibles OpenAI).
 
-This contains everything you need to run your app locally.
+## Características
 
-View your app in AI Studio: https://ai.studio/apps/ccc7769c-89f2-4bc6-8a15-d515c266d7a6
+- **Chat** — conversación directa con la IA, adjuntos múltiples y dictado
+- **Agente** — tareas complejas con pasos de razonamiento colapsables y ejecución automática de Python (Pyodide en WebView)
+- **Historial** — menú en cabecera con filtros Chat/Agente y botones de nueva sesión
+- **Configuración** — proveedor, URL base, modelo, API Key, prueba de conexión y tema
+- **Onboarding** guiado con logo y tutorial
+- **Room** para sesiones/mensajes separados por tipo
+- **Retrofit + Moshi** para llamadas reales a la API (sin simulaciones)
 
-## Run Locally
+## Colores
 
-**Prerequisites:**  [Android Studio](https://developer.android.com/studio)
+| Token | Hex |
+|-------|-----|
+| Fondo | `#0D0D0D` |
+| Naranja | `#FF5722` |
+| Tarjetas | `#18181B` |
+| Bordes | `#52525B` |
 
+## Compilación
 
-1. Open Android Studio
-2. Select **Open** and choose the directory containing this project
-3. Allow Android Studio to fix any incompatibilities as it imports the project.
-4. Create a file named `.env` in the project directory and set `GEMINI_API_KEY` in that file to your Gemini API key (see `.env.example` for an example)
-5. Remove this line from the app's `build.gradle.kts` file: `signingConfig = signingConfigs.getByName("debugConfig")`
-6. Run the app on an emulator or physical device
+- Gradle **9.3.1**
+- Android Gradle Plugin **9.1.1**
+- Kotlin **2.2.10**
+- minSdk 24 · targetSdk 36 · compileSdk 36
+
+```bash
+./gradlew :app:assembleDebug
+```
+
+## Configuración
+
+1. Abre el proyecto en Android Studio
+2. Ejecuta en emulador o dispositivo
+3. Completa el onboarding e ingresa tu API Key de [console.groq.com/keys](https://console.groq.com/keys)
+4. En Configuración (engranaje) puedes cambiar proveedor, modelo y probar la conexión
+
+## Estructura
+
+```
+app/src/main/java/com/example/
+├── MainActivity.kt          # UI Compose completa
+├── data/
+│   ├── AppRepository.kt     # Room + API
+│   ├── api/                 # Retrofit models & service
+│   └── database/            # Entities, DAO, Room DB
+└── ui/
+    ├── ZaiViewModel.kt
+    ├── SandboxWebView.kt    # Pyodide
+    └── theme/
+```
+
+## Licencia
+
+Proyecto de demostración.

@@ -1,6 +1,6 @@
 {
   "name": "GroqApp",
-  "description": "Groq API client with a 5-tab workspace, sandboxed files explorer, Room chat history, and customized Groq models.",
+  "description": "Android app with Chat and Agent tabs, real Groq API, Room history, Pyodide Python sandbox, file attachments, and onboarding.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": []
 }

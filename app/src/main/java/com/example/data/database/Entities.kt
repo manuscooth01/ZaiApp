@@ -8,7 +8,9 @@ data class ChatSession(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val title: String,
     val timestamp: Long = System.currentTimeMillis(),
-    val model: String
+    val model: String,
+    /** "Chat" or "Agente" — sessions are kept separate */
+    val sessionType: String = "Chat"
 )
 
 @Entity(tableName = "chat_messages")
@@ -18,5 +20,6 @@ data class ChatMessage(
     val role: String, // "user", "assistant", "system"
     val content: String,
     val timestamp: Long = System.currentTimeMillis(),
-    val thinkingSteps: String? = null // Semi-colon or newline-separated steps
+    /** Newline-separated reasoning / thinking steps (agent) */
+    val thinkingSteps: String? = null
 )
