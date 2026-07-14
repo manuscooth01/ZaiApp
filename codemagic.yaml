@@ -2,11 +2,7 @@ workflows:
   build-android:
     name: Build Android APK
     environment:
-      vars:
-        # Aquí puedes poner variables de entorno si las necesitas, p. ej.:
-        # GROQ_API_KEY: "tu_clave_real"
       java: 17
-      android_sdk_tools: 11076708_latest
     scripts:
       - name: Make gradlew executable
         script: chmod +x gradlew
@@ -17,4 +13,4 @@ workflows:
     publishing:
       email:
         recipients:
-          - tu_correo@example.com
+          - manucarrasquel66@gmail.com   # ← Cambia esto por tu correo real
