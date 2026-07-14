@@ -37,7 +37,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
     private val _baseUrl = MutableStateFlow(defaultBaseUrl)
     val baseUrl: StateFlow<String> = _baseUrl.asStateFlow()
 
-    private val _selectedModel = MutableStateFlow("mixtral-8x7b-32768")
+    private val _selectedModel = MutableStateFlow("llama-3.1-8b-instant")
     val selectedModel: StateFlow<String> = _selectedModel.asStateFlow()
 
     // Sessions and active session
@@ -76,7 +76,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
         val savedBaseUrl = prefs.getString("base_url", defaultBaseUrl) ?: defaultBaseUrl
         _baseUrl.value = savedBaseUrl
 
-        val savedModel = prefs.getString("selected_model", "mixtral-8x7b-32768") ?: "mixtral-8x7b-32768"
+        val savedModel = prefs.getString("selected_model", "llama-3.1-8b-instant") ?: "llama-3.1-8b-instant"
         _selectedModel.value = savedModel
 
         // Load sessions flow

@@ -89,7 +89,7 @@ class MainActivity : ComponentActivity() {
 }
 
 enum class AppTab {
-    CHAT, AGENT, FILES, HISTORY, MORE
+    CHAT, AGENT, HISTORY, MORE
 }
 
 enum class MoreScreen {
@@ -143,21 +143,6 @@ fun MainScreen(onStartDictation: ((String) -> Unit) -> Unit) {
                     modifier = Modifier.testTag("nav_agent")
                 )
                 NavigationBarItem(
-                    selected = currentTab == AppTab.FILES,
-                    onClick = {
-                        currentTab = AppTab.FILES
-                        viewModel.loadSandboxFiles()
-                    },
-                    icon = { Icon(Icons.Default.Folder, contentDescription = "Archivos") },
-                    label = { Text("Archivos") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                        unselectedIconColor = Color(0xFFA1A1AA),
-                        indicatorColor = Color(0xFF242427)
-                    ),
-                    modifier = Modifier.testTag("nav_files")
-                )
-                NavigationBarItem(
                     selected = currentTab == AppTab.HISTORY,
                     onClick = { currentTab = AppTab.HISTORY },
                     icon = { Icon(Icons.Default.History, contentDescription = "Historial") },
@@ -191,21 +176,11 @@ fun MainScreen(onStartDictation: ((String) -> Unit) -> Unit) {
                 .background(Color(0xFF0D0D0D))
         ) {
             when (currentTab) {
-                AppTab.CHAT -> ChatTabScreen(viewModel, onNavigateToSandbox = {
-                    currentTab = AppTab.FILES
-                    viewModel.loadSandboxFiles()
-                }, onStartDictation = onStartDictation)
-
-                AppTab.AGENT -> AgentTabScreen(viewModel, onNavigateToSandbox = {
-                    currentTab = AppTab.FILES
-                    viewModel.loadSandboxFiles()
-                }, onStartDictation = onStartDictation)
-
-                AppTab.FILES -> FilesTabScreen(viewModel)
+                AppTab.CHAT -> ChatTabScreen(viewModel, onStartDictation = onStartDictation)
+                AppTab.AGENT -> AgentTabScreen(viewModel, onStartDictation = onStartDictation)
                 AppTab.HISTORY -> HistoryTabScreen(viewModel, onSessionSelected = {
                     currentTab = AppTab.CHAT
                 })
-
                 AppTab.MORE -> MoreTabScreen(viewModel)
             }
         }
@@ -218,7 +193,6 @@ fun MainScreen(onStartDictation: ((String) -> Unit) -> Unit) {
 @Composable
 fun ChatTabScreen(
     viewModel: ZaiViewModel,
-    onNavigateToSandbox: () -> Unit,
     onStartDictation: ((String) -> Unit) -> Unit
 ) {
     val activeMessages by viewModel.activeMessages.collectAsStateWithLifecycle()
@@ -229,12 +203,14 @@ fun ChatTabScreen(
     var textInput by remember { mutableStateOf("") }
     var showModelDropdown by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    val context = LocalContext.current
 
     val models = listOf(
-        "mixtral-8x7b-32768",
         "llama-3.3-70b-versatile",
         "llama-3.1-8b-instant",
-        "gemma2-9b-it"
+        "gemma2-9b-it",
+        "deepseek-r1-distill-llama-70b",
+        "llama-3.2-90b-vision-preview"
     )
 
     LaunchedEffect(activeMessages.size, isGenerating) {
@@ -377,7 +353,9 @@ fun ChatTabScreen(
                 }
             },
             isGenerating = isGenerating,
-            onNavigateToSandbox = onNavigateToSandbox,
+            onAttachClick = {
+                Toast.makeText(context, "Usa la pestaña Agente para gestionar archivos", Toast.LENGTH_SHORT).show()
+            },
             onStartDictation = {
                 onStartDictation { spoken ->
                     if (spoken.isNotBlank()) {
@@ -391,12 +369,11 @@ fun ChatTabScreen(
 }
 
 // ─────────────────────────────────────────────────────────
-// 2. AGENTE AUTÓNOMO
+// 2. AGENTE AUTÓNOMO (con Sandbox integrado)
 // ─────────────────────────────────────────────────────────
 @Composable
 fun AgentTabScreen(
     viewModel: ZaiViewModel,
-    onNavigateToSandbox: () -> Unit,
     onStartDictation: ((String) -> Unit) -> Unit
 ) {
     val activeMessages by viewModel.activeMessages.collectAsStateWithLifecycle()
@@ -407,13 +384,16 @@ fun AgentTabScreen(
 
     var textInput by remember { mutableStateOf("") }
     var showModelDropdown by remember { mutableStateOf(false) }
+    var showSandbox by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    val context = LocalContext.current
 
     val models = listOf(
-        "mixtral-8x7b-32768",
         "llama-3.3-70b-versatile",
         "llama-3.1-8b-instant",
-        "gemma2-9b-it"
+        "gemma2-9b-it",
+        "deepseek-r1-distill-llama-70b",
+        "llama-3.2-90b-vision-preview"
     )
 
     LaunchedEffect(activeMessages.size, isGenerating) {
@@ -580,7 +560,7 @@ fun AgentTabScreen(
                 }
             },
             isGenerating = isGenerating,
-            onNavigateToSandbox = onNavigateToSandbox,
+            onAttachClick = { showSandbox = true },
             onStartDictation = {
                 onStartDictation { spoken ->
                     if (spoken.isNotBlank()) {
@@ -591,10 +571,26 @@ fun AgentTabScreen(
             placeholderText = "Ordena una tarea al agente..."
         )
     }
+
+    // Diálogo del Sandbox
+    if (showSandbox) {
+        Dialog(onDismissRequest = { showSandbox = false }) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 550.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF18181B)),
+                border = BorderStroke(1.dp, Color(0xFF52525B)),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                FilesTabScreen(viewModel)
+            }
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────
-// 3. ARCHIVOS (SANDBOX)
+// 3. ARCHIVOS (SANDBOX) – se usa solo dentro del Agente
 // ─────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -611,7 +607,7 @@ fun FilesTabScreen(viewModel: ZaiViewModel) {
 
     Column(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .padding(16.dp)
     ) {
         Row(
@@ -662,7 +658,7 @@ fun FilesTabScreen(viewModel: ZaiViewModel) {
         Spacer(modifier = Modifier.height(16.dp))
 
         if (files.isEmpty()) {
-            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
                 Text("No hay archivos en el sandbox.", color = Color(0xFFA1A1AA), fontSize = 14.sp)
             }
         } else {
@@ -987,7 +983,7 @@ fun MoreTabScreen(viewModel: ZaiViewModel) {
                     Text("Explora herramientas, guías y configuraciones", fontSize = 12.sp, color = Color(0xFFA1A1AA), modifier = Modifier.padding(bottom = 20.dp))
 
                     MoreMenuItem("Configuración", "URL Base, Claves API de Groq y modo de visualización", Icons.Default.Settings, onClick = { subScreen = MoreScreen.SETTINGS })
-                    MoreMenuItem("Modelos Soportados", "Modelos de Meta Llama, Google Gemma y Mistral Mixtral", Icons.Default.Memory, onClick = { subScreen = MoreScreen.MODELS })
+                    MoreMenuItem("Modelos Soportados", "Modelos de Meta Llama, Google Gemma y DeepSeek", Icons.Default.Memory, onClick = { subScreen = MoreScreen.MODELS })
                     MoreMenuItem("Proveedores", "Ajustes de compatibilidad de API OpenAI y local Ollama", Icons.Default.Cloud, onClick = { subScreen = MoreScreen.PROVIDERS })
                     MoreMenuItem("Ayuda & Sintaxis", "Guía del sandbox, comandos y renderizado de código", Icons.Default.Help, onClick = { subScreen = MoreScreen.HELP })
                     MoreMenuItem("Acerca de", "Detalles del sistema, versión y autores", Icons.Default.Info, onClick = { subScreen = MoreScreen.ABOUT })
@@ -1237,7 +1233,7 @@ fun ChatInputBar(
     onValueChange: (String) -> Unit,
     onSendClick: () -> Unit,
     isGenerating: Boolean,
-    onNavigateToSandbox: () -> Unit,
+    onAttachClick: () -> Unit,
     onStartDictation: () -> Unit,
     placeholderText: String
 ) {
@@ -1251,8 +1247,8 @@ fun ChatInputBar(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onNavigateToSandbox, modifier = Modifier.size(40.dp)) {
-                Icon(Icons.Default.AttachFile, contentDescription = "Sandbox", tint = Color(0xFFA1A1AA))
+            IconButton(onClick = onAttachClick, modifier = Modifier.size(40.dp)) {
+                Icon(Icons.Default.AttachFile, contentDescription = "Adjuntar", tint = Color(0xFFA1A1AA))
             }
 
             IconButton(onClick = onStartDictation, modifier = Modifier.size(40.dp)) {
@@ -1356,10 +1352,11 @@ fun SettingsTabScreen(viewModel: ZaiViewModel) {
     }
 
     val models = listOf(
-        "mixtral-8x7b-32768",
         "llama-3.3-70b-versatile",
         "llama-3.1-8b-instant",
-        "gemma2-9b-it"
+        "gemma2-9b-it",
+        "deepseek-r1-distill-llama-70b",
+        "llama-3.2-90b-vision-preview"
     )
 
     LazyColumn(
@@ -1580,10 +1577,11 @@ fun ModelsInfoScreen() {
             Spacer(modifier = Modifier.height(4.dp))
             Text("Nuestra pasarela de procesamiento de lenguaje natural aprovecha unidades LPU dedicadas para ofrecer velocidades superiores a 500 tokens por segundo.", fontSize = 12.sp, color = Color(0xFFA1A1AA))
         }
-        item { ModelDetailCard("mixtral-8x7b-32768", "Inferencia MoE (Mixture of Experts). Tareas generales con excelente ventana de contexto de 32k tokens.") }
         item { ModelDetailCard("llama-3.3-70b-versatile", "Modelo de Meta de última generación optimizado para lógica compleja y razonamiento profundo.") }
         item { ModelDetailCard("llama-3.1-8b-instant", "Modelo ligero e instantáneo optimizado para chat interactivo rápido y respuestas en milisegundos.") }
         item { ModelDetailCard("gemma2-9b-it", "Modelo abierto de Google refinado para seguir instrucciones precisas de forma muy natural en español.") }
+        item { ModelDetailCard("deepseek-r1-distill-llama-70b", "DeepSeek R1 destilado sobre Llama 70B, excelente razonamiento paso a paso.") }
+        item { ModelDetailCard("llama-3.2-90b-vision-preview", "Modelo multimodal con capacidad de visión, ideal para descripción de imágenes.") }
     }
 }
 
@@ -1634,7 +1632,7 @@ fun HelpScreen() {
         }
         item { HelpCard("Modo Chat Directo", "Te comunica directamente con el LLM sin demoras. Ideal para preguntas inmediatas o depuración rápida de código.") }
         item { HelpCard("Modo Agente Autónomo", "El Agente sigue un proceso cognitivo: analiza tu instrucción, examina el sandbox de archivos locales para encontrar referencias y simula búsquedas web antes de componer la respuesta final.") }
-        item { HelpCard("Sandbox de Archivos", "En la pestaña 'Archivos' puedes crear documentos locales (ej: notas.txt). Pídele al Agente 'lee notas.txt y resume' para que lo inyecte automáticamente en el contexto.") }
+        item { HelpCard("Sandbox de Archivos", "En la pestaña 'Agente' toca el clip para abrir el explorador de archivos. Crea documentos locales y menciónalos en tus instrucciones para que el Agente los lea automáticamente.") }
     }
 }
 
