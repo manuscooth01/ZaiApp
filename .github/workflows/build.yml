@@ -17,6 +17,5 @@ jobs:
         with:
           java-version: '11'
 
-      - name: Build debug APK
-        run: |
-          ./gradlew assembleDebug --no-configuration-cache
+       - name: Build debug APK
+         run: ./gradlew assembleDebug --no-configuration-cache
