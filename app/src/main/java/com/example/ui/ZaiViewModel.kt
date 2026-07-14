@@ -18,7 +18,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
-import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
 class ZaiViewModel(application: Application) : AndroidViewModel(application) {
@@ -34,16 +33,13 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
         if (!exists()) mkdirs()
     }
 
-    // ─── Onboarding ─────────────────────────────────────
     private val _onboardingCompleted = MutableStateFlow(prefs.getBoolean("onboarding_done", false))
     val onboardingCompleted: StateFlow<Boolean> = _onboardingCompleted.asStateFlow()
-
     fun completeOnboarding() {
         prefs.edit().putBoolean("onboarding_done", true).apply()
         _onboardingCompleted.value = true
     }
 
-    // ─── Proveedores ────────────────────────────────────
     val providers = mapOf(
         "Groq" to "https://api.groq.com/openai/v1/",
         "OpenAI" to "https://api.openai.com/v1/",
@@ -51,22 +47,17 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
     )
     private val _selectedProvider = MutableStateFlow("Groq")
     val selectedProvider: StateFlow<String> = _selectedProvider.asStateFlow()
-
     fun setProvider(provider: String) {
         _selectedProvider.value = provider
         _baseUrl.value = providers[provider] ?: _baseUrl.value
     }
 
-    // ─── API Key, URL, Model ────────────────────────────
     private val defaultApiKey = "YOUR_GROQ_API_KEY_HERE"
     private val defaultBaseUrl = providers["Groq"]!!
-
     private val _apiKey = MutableStateFlow(prefs.getString("api_key", defaultApiKey) ?: defaultApiKey)
     val apiKey: StateFlow<String> = _apiKey.asStateFlow()
-
     private val _baseUrl = MutableStateFlow(prefs.getString("base_url", defaultBaseUrl) ?: defaultBaseUrl)
     val baseUrl: StateFlow<String> = _baseUrl.asStateFlow()
-
     private val _selectedModel = MutableStateFlow(prefs.getString("selected_model", "llama-3.1-8b-instant") ?: "llama-3.1-8b-instant")
     val selectedModel: StateFlow<String> = _selectedModel.asStateFlow()
 
@@ -82,7 +73,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
     fun saveBaseUrl(url: String) { prefs.edit().putString("base_url", url).apply(); _baseUrl.value = url }
     fun saveSelectedModel(model: String) { prefs.edit().putString("selected_model", model).apply(); _selectedModel.value = model }
 
-    // ─── Sesiones separadas ─────────────────────────────
     private val _chatSessionId = MutableStateFlow<Long?>(null)
     val chatSessionId: StateFlow<Long?> = _chatSessionId.asStateFlow()
     private val _agentSessionId = MutableStateFlow<Long?>(null)
@@ -95,11 +85,9 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
 
     val sessions: StateFlow<List<ChatSession>>
 
-    // ─── Sandbox files ──────────────────────────────────
     private val _sandboxFiles = MutableStateFlow<List<FileItem>>(emptyList())
     val sandboxFiles: StateFlow<List<FileItem>> = _sandboxFiles.asStateFlow()
 
-    // ─── Estados de generación ──────────────────────────
     private val _isGenerating = MutableStateFlow(false)
     val isGenerating: StateFlow<Boolean> = _isGenerating.asStateFlow()
     private val _loadingMessage = MutableStateFlow("")
@@ -109,12 +97,10 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
     private val _apiError = MutableStateFlow<String?>(null)
     val apiError: StateFlow<String?> = _apiError.asStateFlow()
 
-    // ─── Tema ──────────────────────────────────────────
     private val _themeMode = MutableStateFlow(prefs.getString("theme", "dark") ?: "dark")
     val themeMode: StateFlow<String> = _themeMode.asStateFlow()
     fun setTheme(mode: String) { prefs.edit().putString("theme", mode).apply(); _themeMode.value = mode }
 
-    // ─── Archivos adjuntos (cola) ───────────────────────
     private val _pendingFiles = MutableStateFlow<List<AttachedFile>>(emptyList())
     val pendingFiles: StateFlow<List<AttachedFile>> = _pendingFiles.asStateFlow()
     fun addPendingFile(file: AttachedFile) { _pendingFiles.value = _pendingFiles.value + file }
@@ -128,14 +114,12 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
         sessions = repository.getAllSessions()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-        // Observar mensajes del chat
         viewModelScope.launch {
             _chatSessionId.collect { sid ->
                 if (sid != null) repository.getMessagesForSession(sid).collect { _chatMessages.value = it }
                 else _chatMessages.value = emptyList()
             }
         }
-        // Observar mensajes del agente
         viewModelScope.launch {
             _agentSessionId.collect { sid ->
                 if (sid != null) repository.getMessagesForSession(sid).collect { _agentMessages.value = it }
@@ -146,18 +130,15 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
         loadSandboxFiles()
     }
 
-    // ─── Sesiones ───────────────────────────────────────
     fun selectChatSession(id: Long) { _chatSessionId.value = id; _apiError.value = null }
     fun selectAgentSession(id: Long) { _agentSessionId.value = id; _apiError.value = null }
 
-    fun startNewSession(type: String): Long {
-        var id = 0L
+    fun startNewSession(type: String) {
         viewModelScope.launch {
-            val title = "Nueva sesión ${type} - ${System.currentTimeMillis() % 1000}"
-            id = repository.createSession(title, _selectedModel.value)
+            val title = "Nueva sesión $type - ${System.currentTimeMillis() % 1000}"
+            val id = repository.createSession(title, _selectedModel.value)
             if (type == "Chat") selectChatSession(id) else selectAgentSession(id)
         }
-        return id
     }
 
     fun deleteSession(sessionId: Long) {
@@ -169,20 +150,16 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
 
     // ─── Mensajes ───────────────────────────────────────
     fun sendChatMessage(text: String) {
-        if (text.isBlank() && _pendingFiles.value.isEmpty()) return
         val sid = _chatSessionId.value
         viewModelScope.launch {
             val sessionId = sid ?: run {
                 val id = repository.createSession(text.take(20), _selectedModel.value)
                 _chatSessionId.value = id; id
             }
-            // Guardar mensaje usuario
             repository.saveMessage(sessionId, "user", text)
-            // Procesar archivos adjuntos
             val fileContents = _pendingFiles.value.mapNotNull { readAttachedFile(it) }
             val fullPrompt = if (fileContents.isNotEmpty()) "$text\n\n[Archivos adjuntos]:\n${fileContents.joinToString("\n")}" else text
             _pendingFiles.value = emptyList()
-            // Llamar API
             _isGenerating.value = true; _loadingMessage.value = "Enviando a Groq..."
             val messages = buildApiMessages(sessionId, fullPrompt, isAgent = false)
             val result = repository.getChatCompletion(_baseUrl.value, _apiKey.value, _selectedModel.value, messages)
@@ -195,7 +172,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun sendAgentMessage(text: String) {
-        if (text.isBlank() && _pendingFiles.value.isEmpty()) return
         val sid = _agentSessionId.value
         viewModelScope.launch {
             val sessionId = sid ?: run {
@@ -209,7 +185,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
             _isGenerating.value = true; _loadingMessage.value = "Agente analizando..."
             val steps = mutableListOf("Analizando solicitud...", "Cargando archivos...")
             _thinkingSteps.value = steps.toList()
-            // Buscar archivos en workspace referenciados
             val referenced = _sandboxFiles.value.filter { text.contains(it.name, true) }
             var ctx = ""
             for (f in referenced) {
@@ -225,7 +200,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
             result.fold(
                 onSuccess = {
                     repository.saveMessage(sessionId, "assistant", it, thinkingSteps = steps.joinToString("\n"))
-                    // Ejecutar Python automáticamente si contiene código
                     if (it.contains("```python")) {
                         val code = extractPythonCode(it)
                         executePython(code) { output ->
@@ -249,10 +223,8 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
         return apiMessages
     }
 
-    // ─── Python sandbox ─────────────────────────────────
+    // Python sandbox
     fun executePython(code: String, callback: (String) -> Unit) {
-        // Se llamará desde la UI usando el SandboxWebView
-        // El ViewModel guarda el código para que la UI lo ejecute
         _pendingPythonCode = code
         _pythonCallback = callback
     }
@@ -273,7 +245,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
         return text.substring(start + 9, end).trim()
     }
 
-    // ─── Archivos adjuntos ──────────────────────────────
     private fun readAttachedFile(file: AttachedFile): String? {
         return try {
             val inputStream = context.contentResolver.openInputStream(file.uri) ?: return null
@@ -281,7 +252,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
         } catch (e: Exception) { null }
     }
 
-    // ─── Workspace & sandbox ────────────────────────────
+    // Workspace
     fun loadSandboxFiles() {
         viewModelScope.launch(Dispatchers.IO) {
             val files = sandboxDir.listFiles()?.map { FileItem(it.name, it.length(), it.lastModified()) }?.sortedByDescending { it.lastModified } ?: emptyList()
@@ -299,7 +270,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
         return try { File(sandboxDir, name).let { if (it.exists()) it.readText() else null } } catch (e: Exception) { null }
     }
 
-    // ─── Descargas ──────────────────────────────────────
     fun getDownloadUri(fileName: String): Uri? {
         val file = File(sandboxDir, fileName)
         if (!file.exists()) return null

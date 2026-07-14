@@ -30,20 +30,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
-import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.database.ChatMessage
@@ -55,6 +50,10 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 class MainActivity : ComponentActivity() {
+    // Callbacks para dictado y archivos
+    private var speechCallback: ((String) -> Unit)? = null
+    private var onFilesPicked: ((List<Uri>) -> Unit)? = null
+
     private val speechLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -63,19 +62,44 @@ class MainActivity : ComponentActivity() {
             speechCallback?.invoke(spoken)
         }
     }
-    private var speechCallback: ((String) -> Unit)? = null
 
     private val filePicker = registerForActivityResult(
         ActivityResultContracts.GetMultipleContents()
-    ) { uris ->
-        uris?.forEach { uri ->
-            val name = getFileName(uri) ?: "archivo"
-            val type = contentResolver.getType(uri) ?: "*/*"
-            attachedFiles.add(AttachedFile(uri, name, type))
-        }
+    ) { uris: List<Uri> ->
+        onFilesPicked?.invoke(uris)
     }
 
-    private val attachedFiles = mutableListOf<AttachedFile>()
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        setContent {
+            MyApplicationTheme {
+                MainApp(
+                    onPickFile = { filePicker.launch(arrayOf("*/*")) },
+                    onStartDictation = { cb ->
+                        speechCallback = cb
+                        try {
+                            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "es-ES")
+                                putExtra(RecognizerIntent.EXTRA_PROMPT, "Dicta tu mensaje...")
+                            }
+                            speechLauncher.launch(intent)
+                        } catch (e: Exception) {
+                            Toast.makeText(this, "Dictado no soportado", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onFilesSelected = { list ->
+                        list.forEach { uri ->
+                            val name = getFileName(uri) ?: "archivo"
+                            val type = contentResolver.getType(uri) ?: "*/*"
+                            onFilesPickedInternal(uri, name, type)
+                        }
+                    }
+                )
+            }
+        }
+    }
 
     private fun getFileName(uri: Uri): String? {
         val cursor = contentResolver.query(uri, null, null, null, null)
@@ -87,31 +111,40 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
-        setContent {
-            MyApplicationTheme {
-                MainApp()
+    // Esta función se conectará con el ViewModel
+    private fun onFilesPickedInternal(uri: Uri, name: String, type: String) {
+        // La comunicaremos a través de una variable estática o mejor usando un callback en el Compose
+    }
+}
+
+@Composable
+fun MainApp(
+    onPickFile: () -> Unit,
+    onStartDictation: ((String) -> Unit) -> Unit,
+    onFilesSelected: (List<Uri>) -> Unit
+) {
+    val viewModel: ZaiViewModel = viewModel()
+    val onboardingDone by viewModel.onboardingCompleted.collectAsStateWithLifecycle()
+    var showOnboarding by remember { mutableStateOf(!onboardingDone) }
+
+    // Configuramos el callback de archivos una vez que tengamos el ViewModel
+    LaunchedEffect(Unit) {
+        (LocalContext.current as? MainActivity)?.onFilesPicked = { uris ->
+            uris.forEach { uri ->
+                val name = (LocalContext.current as? MainActivity)?.getFileName(uri) ?: "archivo"
+                val type = (LocalContext.current as? MainActivity)?.contentResolver?.getType(uri) ?: "*/*"
+                viewModel.addPendingFile(AttachedFile(uri, name, type))
             }
         }
     }
 
-    @Composable
-    fun MainApp() {
-        val viewModel: ZaiViewModel = viewModel()
-        val onboardingDone by viewModel.onboardingCompleted.collectAsStateWithLifecycle()
-        var showOnboarding by remember { mutableStateOf(!onboardingDone) }
-
-        if (showOnboarding) {
-            OnboardingScreen(viewModel) { showOnboarding = false }
-        } else {
-            MainScreen(viewModel)
-        }
+    if (showOnboarding) {
+        OnboardingScreen(viewModel) { showOnboarding = false }
+    } else {
+        MainScreen(viewModel, onPickFile, onStartDictation)
     }
 }
 
-// ─── Onboarding ──────────────────────────────────────────
 @Composable
 fun OnboardingScreen(viewModel: ZaiViewModel, onFinish: () -> Unit) {
     var step by remember { mutableIntStateOf(0) }
@@ -121,7 +154,7 @@ fun OnboardingScreen(viewModel: ZaiViewModel, onFinish: () -> Unit) {
         Card(Modifier.fillMaxWidth().padding(16.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF18181B)), border = BorderStroke(1.dp, Color(0xFF52525B)), shape = RoundedCornerShape(20.dp)) {
             Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 when (step) {
-                    0 -> { // Bienvenida
+                    0 -> {
                         Icon(Icons.Default.Bolt, null, tint = Color(0xFFFF5722), modifier = Modifier.size(80.dp))
                         Spacer(Modifier.height(16.dp))
                         Text("¡Bienvenido a GroqApp!", fontWeight = FontWeight.Bold, fontSize = 24.sp, color = Color.White)
@@ -130,7 +163,7 @@ fun OnboardingScreen(viewModel: ZaiViewModel, onFinish: () -> Unit) {
                         Spacer(Modifier.height(24.dp))
                         Button(onClick = { step = 1 }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5722))) { Text("Comenzar", color = Color.White) }
                     }
-                    1 -> { // Tutorial (tarjetas)
+                    1 -> {
                         Text("Tutorial rápido", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFFFF5722))
                         Spacer(Modifier.height(16.dp))
                         TutorialCard("💬 Chat", "Conversación directa con la IA. Adjunta imágenes y texto.")
@@ -139,12 +172,11 @@ fun OnboardingScreen(viewModel: ZaiViewModel, onFinish: () -> Unit) {
                         Spacer(Modifier.height(16.dp))
                         Button(onClick = { step = 2 }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5722))) { Text("Siguiente") }
                     }
-                    2 -> { // Configuración guiada
+                    2 -> {
                         Text("Configura tu API", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFFFF5722))
                         Spacer(Modifier.height(16.dp))
                         Text("Selecciona el proveedor e ingresa tu API Key.", textAlign = TextAlign.Center, color = Color.White)
                         Spacer(Modifier.height(16.dp))
-                        // Proveedor
                         var selected by remember { mutableStateOf("Groq") }
                         Box {
                             OutlinedTextField(value = selected, onValueChange = {}, readOnly = true, modifier = Modifier.fillMaxWidth(), colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White))
@@ -181,9 +213,8 @@ fun TutorialCard(icon: String, text: String) {
     }
 }
 
-// ─── Pantalla principal ─────────────────────────────────
 @Composable
-fun MainScreen(viewModel: ZaiViewModel) {
+fun MainScreen(viewModel: ZaiViewModel, onPickFile: () -> Unit, onStartDictation: ((String) -> Unit) -> Unit) {
     var currentTab by remember { mutableStateOf("Chat") }
     val apiError by viewModel.apiError.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -208,7 +239,6 @@ fun MainScreen(viewModel: ZaiViewModel) {
         }
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding).background(Color(0xFF0D0D0D))) {
-            // Logo y nombre en esquina superior izquierda
             Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Canvas(Modifier.size(24.dp)) {
                     drawCircle(Color(0xFFFF5722), radius = size.minDimension / 2)
@@ -218,8 +248,8 @@ fun MainScreen(viewModel: ZaiViewModel) {
             }
 
             when (currentTab) {
-                "Chat" -> ChatTab(viewModel)
-                "Agente" -> AgentTab(viewModel)
+                "Chat" -> ChatTab(viewModel, onPickFile, onStartDictation)
+                "Agente" -> AgentTab(viewModel, onPickFile, onStartDictation)
                 "Espacio" -> WorkspaceTab(viewModel)
                 "Historial" -> HistoryTab(viewModel) { currentTab = "Chat" }
                 "Más" -> MoreTab(viewModel)
@@ -228,67 +258,77 @@ fun MainScreen(viewModel: ZaiViewModel) {
     }
 }
 
-// ─── Chat Tab ────────────────────────────────────────────
 @Composable
-fun ChatTab(viewModel: ZaiViewModel) {
+fun ChatTab(viewModel: ZaiViewModel, onPickFile: () -> Unit, onStartDictation: ((String) -> Unit) -> Unit) {
     val messages by viewModel.chatMessages.collectAsStateWithLifecycle()
     val isGen by viewModel.isGenerating.collectAsStateWithLifecycle()
     val loadMsg by viewModel.loadingMessage.collectAsStateWithLifecycle()
-    var text by remember { mutableStateOf("") }
     val pendingFiles by viewModel.pendingFiles.collectAsStateWithLifecycle()
+    var text by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
-    val context = LocalContext.current
 
     LaunchedEffect(messages.size, isGen) { if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1) }
 
     Column(Modifier.fillMaxSize()) {
-        // Archivos adjuntos en cola
         if (pendingFiles.isNotEmpty()) {
             Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 pendingFiles.forEachIndexed { idx, file ->
-                    Chip(onClick = {}, label = { Text(file.name, fontSize = 10.sp) }, trailingIcon = { IconButton(onClick = { viewModel.removePendingFile(idx) }) { Icon(Icons.Default.Close, null, modifier = Modifier.size(12.dp)) } })
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(file.name, fontSize = 10.sp, color = Color.White)
+                        IconButton(onClick = { viewModel.removePendingFile(idx) }, modifier = Modifier.size(16.dp)) {
+                            Icon(Icons.Default.Close, null, tint = Color.Red, modifier = Modifier.size(12.dp))
+                        }
+                    }
                 }
             }
         }
         Box(Modifier.weight(1f)) {
-            LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(messages, key = { it.id }) { ChatBubble(it) }
-                if (isGen) { item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) { CircularProgressIndicator(Modifier.size(20.dp), color = Color(0xFFFF5722), strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text(loadMsg, color = Color.White, fontSize = 12.sp) } } }
+            if (messages.isEmpty()) {
+                Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.Chat, null, tint = Color(0xFFFF5722), modifier = Modifier.size(48.dp))
+                    Spacer(Modifier.height(12.dp))
+                    Text("Conversación Directa", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 16.sp)
+                }
+            } else {
+                LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(messages, key = { it.id }) { ChatBubble(it) }
+                    if (isGen) { item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) { CircularProgressIndicator(Modifier.size(20.dp), color = Color(0xFFFF5722), strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text(loadMsg, color = Color.White, fontSize = 12.sp) } } }
+                }
             }
         }
-        InputBar(text, { text = it }, {
-            if (text.isNotBlank() || pendingFiles.isNotEmpty()) {
-                viewModel.sendChatMessage(text); text = ""
-            }
-        }, isGen, {
-            val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"; putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true) }
-            (context as? MainActivity)?.filePicker?.launch(arrayOf("*/*"))
-        }, { /* dictado */ })
+        InputBar(
+            value = text,
+            onValue = { text = it },
+            onSend = {
+                if (text.isNotBlank() || pendingFiles.isNotEmpty()) {
+                    viewModel.sendChatMessage(text); text = ""
+                }
+            },
+            isGen = isGen,
+            onAttach = onPickFile,
+            onDictate = { onStartDictation { spoken -> text = if (text.isBlank()) spoken else "$text $spoken" } }
+        )
     }
 }
 
-// ─── Agente Tab ──────────────────────────────────────────
 @Composable
-fun AgentTab(viewModel: ZaiViewModel) {
+fun AgentTab(viewModel: ZaiViewModel, onPickFile: () -> Unit, onStartDictation: ((String) -> Unit) -> Unit) {
     val messages by viewModel.agentMessages.collectAsStateWithLifecycle()
     val isGen by viewModel.isGenerating.collectAsStateWithLifecycle()
     val steps by viewModel.thinkingSteps.collectAsStateWithLifecycle()
-    var text by remember { mutableStateOf("") }
     val pendingFiles by viewModel.pendingFiles.collectAsStateWithLifecycle()
+    var text by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
-    val context = LocalContext.current
     var sandbox by remember { mutableStateOf(false) }
     var pythonCode by remember { mutableStateOf("") }
     var pythonResult by remember { mutableStateOf("") }
 
     LaunchedEffect(messages.size, isGen) { if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1) }
 
-    // Ejecución automática de Python
     LaunchedEffect(messages.lastOrNull()?.content) {
         val last = messages.lastOrNull()
         if (last != null && last.role == "assistant" && last.content.contains("```python")) {
-            val code = last.content.substringAfter("```python").substringBefore("```").trim()
-            pythonCode = code
+            pythonCode = last.content.substringAfter("```python").substringBefore("```").trim()
             sandbox = true
         }
     }
@@ -297,27 +337,43 @@ fun AgentTab(viewModel: ZaiViewModel) {
         if (pendingFiles.isNotEmpty()) {
             Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 pendingFiles.forEachIndexed { idx, file ->
-                    Chip(onClick = {}, label = { Text(file.name, fontSize = 10.sp) }, trailingIcon = { IconButton(onClick = { viewModel.removePendingFile(idx) }) { Icon(Icons.Default.Close, null, modifier = Modifier.size(12.dp)) } })
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(file.name, fontSize = 10.sp, color = Color.White)
+                        IconButton(onClick = { viewModel.removePendingFile(idx) }, modifier = Modifier.size(16.dp)) {
+                            Icon(Icons.Default.Close, null, tint = Color.Red, modifier = Modifier.size(12.dp))
+                        }
+                    }
                 }
             }
         }
         Box(Modifier.weight(1f)) {
-            LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(messages, key = { it.id }) { ChatBubble(it) }
-                if (isGen) { item { ThinkingCard(steps) } }
+            if (messages.isEmpty()) {
+                Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.SmartToy, null, tint = Color(0xFFFF5722), modifier = Modifier.size(48.dp))
+                    Spacer(Modifier.height(12.dp))
+                    Text("Agente Autónomo", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 16.sp)
+                }
+            } else {
+                LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(messages, key = { it.id }) { ChatBubble(it) }
+                    if (isGen) { item { ThinkingCard(steps) } }
+                }
             }
         }
-        InputBar(text, { text = it }, {
-            if (text.isNotBlank() || pendingFiles.isNotEmpty()) {
-                viewModel.sendAgentMessage(text); text = ""
-            }
-        }, isGen, {
-            val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"; putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true) }
-            (context as? MainActivity)?.filePicker?.launch(arrayOf("*/*"))
-        }, { /* dictado */ })
+        InputBar(
+            value = text,
+            onValue = { text = it },
+            onSend = {
+                if (text.isNotBlank() || pendingFiles.isNotEmpty()) {
+                    viewModel.sendAgentMessage(text); text = ""
+                }
+            },
+            isGen = isGen,
+            onAttach = onPickFile,
+            onDictate = { onStartDictation { spoken -> text = if (text.isBlank()) spoken else "$text $spoken" } }
+        )
     }
 
-    // Sandbox Python
     if (sandbox) {
         Dialog(onDismissRequest = { sandbox = false }) {
             Card(Modifier.fillMaxWidth().heightIn(max = 500.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF18181B)), border = BorderStroke(1.dp, Color(0xFF52525B)), shape = RoundedCornerShape(16.dp)) {
@@ -341,13 +397,10 @@ fun AgentTab(viewModel: ZaiViewModel) {
     }
 }
 
-// ─── Workspace ───────────────────────────────────────────
 @Composable
 fun WorkspaceTab(viewModel: ZaiViewModel) {
     val files by viewModel.sandboxFiles.collectAsStateWithLifecycle()
     var selected by remember { mutableStateOf<String?>(null) }
-    var content by remember { mutableStateOf("") }
-    var edit by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
@@ -355,9 +408,7 @@ fun WorkspaceTab(viewModel: ZaiViewModel) {
         Spacer(Modifier.height(16.dp))
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(files, key = { it.name }) { file ->
-                Card(Modifier.fillMaxWidth().clickable {
-                    selected = file.name; content = viewModel.readSandboxFileContent(file.name) ?: ""; edit = false
-                }, colors = CardDefaults.cardColors(containerColor = Color(0xFF18181B))) {
+                Card(Modifier.fillMaxWidth().clickable { selected = file.name }, colors = CardDefaults.cardColors(containerColor = Color(0xFF18181B))) {
                     Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.InsertDriveFile, null, tint = Color(0xFFFF5722))
                         Spacer(Modifier.width(12.dp))
@@ -369,7 +420,6 @@ fun WorkspaceTab(viewModel: ZaiViewModel) {
             }
         }
         if (selected != null) {
-            Spacer(Modifier.height(16.dp))
             Button(onClick = {
                 val uri = viewModel.getDownloadUri(selected!!)
                 if (uri != null) {
@@ -381,7 +431,6 @@ fun WorkspaceTab(viewModel: ZaiViewModel) {
     }
 }
 
-// ─── Historial ───────────────────────────────────────────
 @Composable
 fun HistoryTab(viewModel: ZaiViewModel, onSelect: () -> Unit) {
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
@@ -392,7 +441,6 @@ fun HistoryTab(viewModel: ZaiViewModel, onSelect: () -> Unit) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("Historial", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFFFF5722))
             Box {
-                // Botón personalizado
                 Canvas(Modifier.size(32.dp).clickable { expanded = true }) {
                     drawRect(Color.White, Offset.Zero, size.copy(width = size.width / 2, height = size.height))
                     drawRect(Color.Black, Offset(size.width / 2, 0f), size.copy(width = size.width / 2, height = size.height))
@@ -410,10 +458,13 @@ fun HistoryTab(viewModel: ZaiViewModel, onSelect: () -> Unit) {
             }
         }
         Spacer(Modifier.height(16.dp))
-        val filtered = sessions.filter { it.title.contains(filter, true) || it.model.contains(filter) } // Simplificación: se necesitaría un campo de tipo en sesión, por ahora mostramos todas.
+        val filtered = sessions // Simplificación, luego añadiremos campo de tipo
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(filtered, key = { it.id }) { session ->
-                Card(Modifier.fillMaxWidth().clickable { if (filter == "Chat") viewModel.selectChatSession(session.id) else viewModel.selectAgentSession(session.id); onSelect() }, colors = CardDefaults.cardColors(containerColor = Color(0xFF18181B))) {
+                Card(Modifier.fillMaxWidth().clickable {
+                    if (filter == "Chat") viewModel.selectChatSession(session.id) else viewModel.selectAgentSession(session.id)
+                    onSelect()
+                }, colors = CardDefaults.cardColors(containerColor = Color(0xFF18181B))) {
                     Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.ChatBubbleOutline, null, tint = Color(0xFFFF5722))
                         Spacer(Modifier.width(12.dp))
@@ -425,7 +476,6 @@ fun HistoryTab(viewModel: ZaiViewModel, onSelect: () -> Unit) {
     }
 }
 
-// ─── Más ─────────────────────────────────────────────────
 @Composable
 fun MoreTab(viewModel: ZaiViewModel) {
     Column(Modifier.fillMaxSize().padding(16.dp)) {
@@ -437,7 +487,6 @@ fun MoreTab(viewModel: ZaiViewModel) {
         var key by remember { mutableStateOf(viewModel.apiKey.value) }
         val context = LocalContext.current
 
-        // Proveedor
         Text("Proveedor", color = Color.White)
         Box {
             OutlinedTextField(prov, {}, readOnly = true, modifier = Modifier.fillMaxWidth(), colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White))
@@ -450,16 +499,15 @@ fun MoreTab(viewModel: ZaiViewModel) {
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(model, { model = it }, label = { Text("Modelo") }, modifier = Modifier.fillMaxWidth(), colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White))
         Spacer(Modifier.height(8.dp))
-        OutlinedTextField(key, { key = it }, label = { Text("API Key") }, modifier = Modifier.fillMaxWidth(), visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(), colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White))
+        OutlinedTextField(key, { key = it }, label = { Text("API Key") }, modifier = Modifier.fillMaxWidth(), visualTransformation = PasswordVisualTransformation(), colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White))
         Spacer(Modifier.height(12.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             Button(onClick = { viewModel.saveApiKey(key); viewModel.saveBaseUrl(url); viewModel.saveSelectedModel(model); Toast.makeText(context, "Guardado", Toast.LENGTH_SHORT).show() }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5722))) { Text("Guardar") }
-            Button(onClick = { /* Test connection */ }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF242427))) { Text("Probar") }
+            Button(onClick = { /* Probar */ }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF242427))) { Text("Probar") }
         }
     }
 }
 
-// ─── Componentes comunes ─────────────────────────────────
 @Composable
 fun ChatBubble(message: ChatMessage) {
     val isUser = message.role == "user"
@@ -491,6 +539,7 @@ fun InputBar(value: String, onValue: (String) -> Unit, onSend: () -> Unit, isGen
         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onAttach) { Icon(Icons.Default.AttachFile, null, tint = Color(0xFFA1A1AA)) }
             TextField(value, onValue, Modifier.weight(1f), placeholder = { Text("Mensaje...") }, colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent, focusedTextColor = Color.White, unfocusedTextColor = Color.White))
+            IconButton(onClick = onDictate) { Icon(Icons.Default.Mic, null, tint = Color(0xFFFF5722)) }
             IconButton(onClick = onSend, enabled = !isGen && (value.isNotBlank() || true)) { Icon(Icons.Default.Send, null, tint = Color(0xFFFF5722)) }
         }
     }
