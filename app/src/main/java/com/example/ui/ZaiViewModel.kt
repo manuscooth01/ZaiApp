@@ -21,57 +21,34 @@ import java.io.FileOutputStream
 import java.util.zip.ZipOutputStream
 
 class ZaiViewModel(application: Application) : AndroidViewModel(application) {
-
     private val repository: AppRepository
     private val prefs = application.getSharedPreferences("groq_prefs", Context.MODE_PRIVATE)
     private val context = application
 
-    val sandboxDir = File(application.filesDir, "sandbox").apply {
-        if (!exists()) mkdirs()
-    }
-    val workspaceDir = File(application.filesDir, "workspace").apply {
-        if (!exists()) mkdirs()
-    }
+    val sandboxDir = File(application.filesDir, "sandbox").apply { if (!exists()) mkdirs() }
 
     private val _onboardingCompleted = MutableStateFlow(prefs.getBoolean("onboarding_done", false))
     val onboardingCompleted: StateFlow<Boolean> = _onboardingCompleted.asStateFlow()
-    fun completeOnboarding() {
-        prefs.edit().putBoolean("onboarding_done", true).apply()
-        _onboardingCompleted.value = true
-    }
+    fun completeOnboarding() { prefs.edit().putBoolean("onboarding_done", true).apply(); _onboardingCompleted.value = true }
 
-    val providers = mapOf(
-        "Groq" to "https://api.groq.com/openai/v1/",
-        "OpenAI" to "https://api.openai.com/v1/",
-        "Ollama (local)" to "http://localhost:11434/v1/"
-    )
+    val providers = mapOf("Groq" to "https://api.groq.com/openai/v1/", "OpenAI" to "https://api.openai.com/v1/", "Ollama (local)" to "http://localhost:11434/v1/")
     private val _selectedProvider = MutableStateFlow("Groq")
     val selectedProvider: StateFlow<String> = _selectedProvider.asStateFlow()
-    fun setProvider(provider: String) {
-        _selectedProvider.value = provider
-        _baseUrl.value = providers[provider] ?: _baseUrl.value
-    }
+    fun setProvider(p: String) { _selectedProvider.value = p; _baseUrl.value = providers[p] ?: _baseUrl.value }
 
     private val defaultApiKey = "YOUR_GROQ_API_KEY_HERE"
-    private val defaultBaseUrl = providers["Groq"]!!
     private val _apiKey = MutableStateFlow(prefs.getString("api_key", defaultApiKey) ?: defaultApiKey)
     val apiKey: StateFlow<String> = _apiKey.asStateFlow()
-    private val _baseUrl = MutableStateFlow(prefs.getString("base_url", defaultBaseUrl) ?: defaultBaseUrl)
+    private val _baseUrl = MutableStateFlow(prefs.getString("base_url", providers["Groq"]!!) ?: providers["Groq"]!!)
     val baseUrl: StateFlow<String> = _baseUrl.asStateFlow()
     private val _selectedModel = MutableStateFlow(prefs.getString("selected_model", "llama-3.1-8b-instant") ?: "llama-3.1-8b-instant")
     val selectedModel: StateFlow<String> = _selectedModel.asStateFlow()
 
-    val availableModels = listOf(
-        "llama-3.3-70b-versatile",
-        "llama-3.1-8b-instant",
-        "gemma2-9b-it",
-        "deepseek-r1-distill-llama-70b",
-        "llama-3.2-90b-vision-preview"
-    )
+    val availableModels = listOf("llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it", "deepseek-r1-distill-llama-70b", "llama-3.2-90b-vision-preview")
 
-    fun saveApiKey(key: String) { prefs.edit().putString("api_key", key).apply(); _apiKey.value = key }
-    fun saveBaseUrl(url: String) { prefs.edit().putString("base_url", url).apply(); _baseUrl.value = url }
-    fun saveSelectedModel(model: String) { prefs.edit().putString("selected_model", model).apply(); _selectedModel.value = model }
+    fun saveApiKey(k: String) { prefs.edit().putString("api_key", k).apply(); _apiKey.value = k }
+    fun saveBaseUrl(u: String) { prefs.edit().putString("base_url", u).apply(); _baseUrl.value = u }
+    fun saveSelectedModel(m: String) { prefs.edit().putString("selected_model", m).apply(); _selectedModel.value = m }
 
     private val _chatSessionId = MutableStateFlow<Long?>(null)
     val chatSessionId: StateFlow<Long?> = _chatSessionId.asStateFlow()
@@ -99,20 +76,18 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _themeMode = MutableStateFlow(prefs.getString("theme", "dark") ?: "dark")
     val themeMode: StateFlow<String> = _themeMode.asStateFlow()
-    fun setTheme(mode: String) { prefs.edit().putString("theme", mode).apply(); _themeMode.value = mode }
+    fun setTheme(m: String) { prefs.edit().putString("theme", m).apply(); _themeMode.value = m }
 
     private val _pendingFiles = MutableStateFlow<List<AttachedFile>>(emptyList())
     val pendingFiles: StateFlow<List<AttachedFile>> = _pendingFiles.asStateFlow()
-    fun addPendingFile(file: AttachedFile) { _pendingFiles.value = _pendingFiles.value + file }
-    fun removePendingFile(index: Int) { _pendingFiles.value = _pendingFiles.value.toMutableList().also { it.removeAt(index) } }
+    fun addPendingFile(f: AttachedFile) { _pendingFiles.value = _pendingFiles.value + f }
+    fun removePendingFile(i: Int) { _pendingFiles.value = _pendingFiles.value.toMutableList().also { it.removeAt(i) } }
     fun clearPendingFiles() { _pendingFiles.value = emptyList() }
 
     init {
-        val database = AppDatabase.getDatabase(application)
-        repository = AppRepository(database.chatDao())
-
-        sessions = repository.getAllSessions()
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        val db = AppDatabase.getDatabase(application)
+        repository = AppRepository(db.chatDao())
+        sessions = repository.getAllSessions().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
         viewModelScope.launch {
             _chatSessionId.collect { sid ->
@@ -126,7 +101,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
                 else _agentMessages.value = emptyList()
             }
         }
-
         loadSandboxFiles()
     }
 
@@ -141,27 +115,27 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun deleteSession(sessionId: Long) {
-        viewModelScope.launch { repository.deleteSession(sessionId) }
-    }
-    fun renameSession(sessionId: Long, title: String) {
-        viewModelScope.launch { repository.updateSessionTitle(sessionId, title) }
-    }
+    fun deleteSession(id: Long) { viewModelScope.launch { repository.deleteSession(id) } }
+    fun renameSession(id: Long, title: String) { viewModelScope.launch { repository.updateSessionTitle(id, title) } }
 
     fun sendChatMessage(text: String) {
         val sid = _chatSessionId.value
         viewModelScope.launch {
-            val sessionId = sid ?: run {
-                val id = repository.createSession(text.take(20), _selectedModel.value)
-                _chatSessionId.value = id; id
-            }
+            val sessionId = sid ?: run { val id = repository.createSession(text.take(20), _selectedModel.value); _chatSessionId.value = id; id }
             repository.saveMessage(sessionId, "user", text)
             val fileContents = _pendingFiles.value.mapNotNull { readAttachedFile(it) }
             val fullPrompt = if (fileContents.isNotEmpty()) "$text\n\n[Archivos adjuntos]:\n${fileContents.joinToString("\n")}" else text
             _pendingFiles.value = emptyList()
             _isGenerating.value = true; _loadingMessage.value = "Enviando a Groq..."
-            val messages = buildApiMessages(sessionId, fullPrompt, isAgent = false)
-            val result = repository.getChatCompletion(_baseUrl.value, _apiKey.value, _selectedModel.value, messages)
+
+            // Construir mensajes directamente
+            val dbMessages = repository.getMessagesForSessionSync(sessionId)
+            val apiMessages = mutableListOf<GroqMessage>()
+            apiMessages.add(GroqMessage(role = "system", content = "Eres un asistente útil. Responde en español."))
+            dbMessages.takeLast(10).forEach { apiMessages.add(GroqMessage(role = it.role, content = it.content)) }
+            apiMessages.add(GroqMessage(role = "user", content = fullPrompt))
+
+            val result = repository.getChatCompletion(_baseUrl.value, _apiKey.value, _selectedModel.value, apiMessages)
             result.fold(
                 onSuccess = { repository.saveMessage(sessionId, "assistant", it) },
                 onFailure = { _apiError.value = it.message; repository.saveMessage(sessionId, "assistant", "Error: ${it.message}") }
@@ -173,10 +147,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
     fun sendAgentMessage(text: String) {
         val sid = _agentSessionId.value
         viewModelScope.launch {
-            val sessionId = sid ?: run {
-                val id = repository.createSession(text.take(20), _selectedModel.value)
-                _agentSessionId.value = id; id
-            }
+            val sessionId = sid ?: run { val id = repository.createSession(text.take(20), _selectedModel.value); _agentSessionId.value = id; id }
             repository.saveMessage(sessionId, "user", text)
             val fileContents = _pendingFiles.value.mapNotNull { readAttachedFile(it) }
             val fullPrompt = if (fileContents.isNotEmpty()) "$text\n\n[Archivos adjuntos]:\n${fileContents.joinToString("\n")}" else text
@@ -190,17 +161,19 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
                 val c = readSandboxFileContent(f.name) ?: ""
                 ctx += "\n--- ${f.name} ---\n$c"
             }
-            steps.add("Construyendo contexto...")
-            _thinkingSteps.value = steps.toList()
-            val messages = buildApiMessages(sessionId, fullPrompt + ctx, isAgent = true)
-            steps.add("Consultando Groq...")
-            _thinkingSteps.value = steps.toList()
-            val result = repository.getChatCompletion(_baseUrl.value, _apiKey.value, _selectedModel.value, messages)
+            steps.add("Construyendo contexto..."); _thinkingSteps.value = steps.toList()
+            val dbMessages = repository.getMessagesForSessionSync(sessionId)
+            val apiMessages = mutableListOf<GroqMessage>()
+            apiMessages.add(GroqMessage(role = "system", content = "Eres un agente autónomo. Responde en español."))
+            dbMessages.takeLast(10).forEach { apiMessages.add(GroqMessage(role = it.role, content = it.content)) }
+            apiMessages.add(GroqMessage(role = "user", content = fullPrompt + ctx))
+            steps.add("Consultando Groq..."); _thinkingSteps.value = steps.toList()
+            val result = repository.getChatCompletion(_baseUrl.value, _apiKey.value, _selectedModel.value, apiMessages)
             result.fold(
                 onSuccess = {
                     repository.saveMessage(sessionId, "assistant", it, thinkingSteps = steps.joinToString("\n"))
                     if (it.contains("```python")) {
-                        val code = extractPythonCode(it)
+                        val code = it.substringAfter("```python").substringBefore("```").trim()
                         executePython(code) { output ->
                             repository.saveMessage(sessionId, "assistant", "\n[Resultado Python]:\n$output", thinkingSteps = null)
                         }
@@ -212,20 +185,8 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun buildApiMessages(sessionId: Long, userText: String, isAgent: Boolean): List<GroqMessage> {
-        val dbMessages = repository.getMessagesForSessionSync(sessionId)
-        val apiMessages = mutableListOf<GroqMessage>()
-        val sys = if (isAgent) "Eres un agente autónomo. Responde en español." else "Eres un asistente útil. Responde en español."
-        apiMessages.add(GroqMessage(role = "system", content = sys))
-        dbMessages.takeLast(10).forEach { apiMessages.add(GroqMessage(role = it.role, content = it.content)) }
-        apiMessages.add(GroqMessage(role = "user", content = userText))
-        return apiMessages
-    }
-
-    fun executePython(code: String, callback: (String) -> Unit) {
-        _pendingPythonCode = code
-        _pythonCallback = callback
-    }
+    // Python sandbox
+    fun executePython(code: String, callback: (String) -> Unit) { _pendingPythonCode = code; _pythonCallback = callback }
     private var _pendingPythonCode: String? = null
     private var _pythonCallback: ((String) -> Unit)? = null
     fun consumePythonExecution(): Pair<String, (String) -> Unit>? {
@@ -235,19 +196,8 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application) {
         return code to cb
     }
 
-    private fun extractPythonCode(text: String): String {
-        val start = text.indexOf("```python")
-        if (start == -1) return ""
-        val end = text.indexOf("```", start + 9)
-        if (end == -1) return text.substring(start + 9)
-        return text.substring(start + 9, end).trim()
-    }
-
     private fun readAttachedFile(file: AttachedFile): String? {
-        return try {
-            val inputStream = context.contentResolver.openInputStream(file.uri) ?: return null
-            inputStream.bufferedReader().readText()
-        } catch (e: Exception) { null }
+        return try { context.contentResolver.openInputStream(file.uri)?.bufferedReader()?.readText() } catch (e: Exception) { null }
     }
 
     fun loadSandboxFiles() {
