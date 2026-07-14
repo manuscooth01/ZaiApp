@@ -7,6 +7,7 @@ import android.provider.OpenableColumns
 import android.speech.RecognizerIntent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -70,7 +71,7 @@ fun MainApp() {
     // Lanzador de archivos
     val filePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
-    ) { uris ->
+    ) { uris: List<Uri> ->
         uris.forEach { uri ->
             val name = getFileName(context, uri) ?: "archivo"
             val type = context.contentResolver.getType(uri) ?: "*/*"
@@ -436,7 +437,7 @@ fun HistoryTab(viewModel: ZaiViewModel, onSelect: () -> Unit) {
             }
         }
         Spacer(Modifier.height(16.dp))
-        val filtered = sessions // Simplificación, luego añadiremos campo de tipo
+        val filtered = sessions
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(filtered, key = { it.id }) { session ->
                 Card(Modifier.fillMaxWidth().clickable {
