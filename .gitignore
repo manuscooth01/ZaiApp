@@ -1,0 +1,7 @@
+.gradle/
+build/
+captures/
+*.apk
+*.zip
+*.log
+.DS_Store

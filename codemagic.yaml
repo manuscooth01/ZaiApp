@@ -1,0 +1,25 @@
+workflows:
+  build-android:
+    name: Build Android APK
+    environment:
+      java: 17
+    scripts:
+      - name: Download and setup Gradle
+        script: |
+          curl -L https://services.gradle.org/distributions/gradle-9.3.1-bin.zip -o gradle.zip
+          unzip -q gradle.zip
+          export GRADLE_HOME=$(pwd)/gradle-9.3.1
+          export PATH=$GRADLE_HOME/bin:$PATH
+          echo "Gradle version:"
+          gradle --version
+      - name: Build debug APK
+        script: |
+          export GRADLE_HOME=$(pwd)/gradle-9.3.1
+          export PATH=$GRADLE_HOME/bin:$PATH
+          gradle assembleDebug --no-daemon --no-configuration-cache
+    artifacts:
+      - app/build/outputs/apk/debug/app-debug.apk
+    publishing:
+      email:
+        recipients:
+          - manucarrasquel66@gmail.com

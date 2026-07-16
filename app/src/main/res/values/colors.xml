@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF0D0D0D</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="groq_orange">#FFFF5722</color>
+    <color name="groq_surface">#FF18181B</color>
+    <color name="groq_outline">#FF52525B</color>
+    <color name="ic_launcher_background">#FF0D0D0D</color>
+</resources>

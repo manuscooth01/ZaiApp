@@ -1,0 +1,6 @@
+{
+  "name": "GroqApp",
+  "description": "Android app with Chat and Agent tabs, real Groq API, Room history, Pyodide Python sandbox, file attachments, and onboarding.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
