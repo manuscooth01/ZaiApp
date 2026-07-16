@@ -1,0 +1,35 @@
+name: Compilar APK Beta
+
+on:
+  push:
+    branches: [ "main" ]
+    tags:
+      - 'v*'
+  workflow_dispatch: # Esto te permite activar la compilación manualmente cuando quieras desde la web de GitHub
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Clonar código del repositorio
+      uses: actions/checkout@v4
+
+    - name: Configurar Java JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Dar permisos de ejecución a Gradlew
+      run: chmod +x gradlew
+
+    - name: Compilar APK (Debug)
+      run: ./gradlew assembleDebug
+
+    - name: Guardar APK compilado
+      uses: actions/upload-artifact@v4
+      with:
+        name: GroqApp-Beta-APK
+        path: app/build/outputs/apk/debug/app-debug.apk
