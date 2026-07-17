@@ -23,11 +23,5 @@
 
 # General attributes
 -keepattributes AndroidManifestApplication
-
-# Crashlytics: conservar archivo de origen y numero de linea en los crashes
-# de release (sin el plugin Gradle no se sube el mapping, pero al menos el
-# numero de linea ayuda a localizar el fallo).
--keepattributes SourceFile,LineNumberTable
--renamesourcefileattribute SourceFile
 -keep public class * extends androidx.lifecycle.LiveData
 -keep interface * implements java.io.Serializable
