@@ -1472,20 +1472,30 @@ fun OnboardingScreen(viewModel: ZaiViewModel, onFinish: () -> Unit) {
                     onClick = {
                         when {
                             isForgotPasswordMode -> {
+                                // El envío del enlace no inicia sesión: cerramos el
+                                // diálogo y el resultado se muestra mediante Toast (apiError).
                                 viewModel.sendPasswordReset(emailInput)
+                                showLoginDialog = false
+                                emailInput = ""
+                                passwordInput = ""
+                                isRegisterMode = false
+                                isForgotPasswordMode = false
                             }
                             isRegisterMode -> {
+                                // No cerramos el diálogo aquí: si el registro falla
+                                // (validación o Firebase) el usuario conserva sus datos
+                                // y ve el error. Al completarse con éxito, el estado
+                                // onboardingCompleted retira toda la pantalla de onboarding
+                                // (y con ella este diálogo).
                                 viewModel.registerWithEmail(emailInput, passwordInput)
                             }
                             else -> {
+                                // Igual que el registro: el diálogo permanece abierto
+                                // mientras carga y ante un error; el éxito lo cierra
+                                // automáticamente al avanzar el onboarding.
                                 viewModel.signInWithEmail(emailInput, passwordInput)
                             }
                         }
-                        showLoginDialog = false
-                        emailInput = ""
-                        passwordInput = ""
-                        isRegisterMode = false
-                        isForgotPasswordMode = false
                     },
                     enabled = !authLoading,
                     shape = RoundedCornerShape(8.dp)
