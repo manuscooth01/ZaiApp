@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "1054810069098-uan8da69c7ef3958nmdldj44pndsn7e6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.aistudio.groqapp",
+            "certificate_hash": "bacecf34b3021b32c4d777060421166f73ab1871"
+          }
+        },
+        {
           "client_id": "1054810069098-vbhtjlrtkg60srrmsafh1fq0d5bq3big.apps.googleusercontent.com",
           "client_type": 3
         }
