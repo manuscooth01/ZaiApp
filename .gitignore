@@ -5,3 +5,8 @@ captures/
 *.zip
 *.log
 .DS_Store
+
+# Keystore de firma (NO subir)
+*.keystore
+*.jks
+keystore_base64.txt
