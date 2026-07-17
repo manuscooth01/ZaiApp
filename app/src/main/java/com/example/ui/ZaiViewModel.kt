@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.Uri
 import android.speech.tts.TextToSpeech
 import androidx.core.content.FileProvider
+import androidx.compose.runtime.Immutable
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
@@ -44,6 +45,10 @@ import java.util.zip.ZipOutputStream
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
+// @Immutable: todos sus campos son val y el objeto no cambia tras crearse. Sin esto,
+// Compose la infiere como inestable (por el campo Uri) y no garantiza saltar la
+// recomposición de los composables que reciben AttachedFile o List<AttachedFile>.
+@Immutable
 data class AttachedFile(val uri: Uri, val name: String, val type: String)
 data class FileItem(val name: String, val sizeBytes: Long, val lastModified: Long)
 
