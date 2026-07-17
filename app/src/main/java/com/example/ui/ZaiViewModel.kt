@@ -11,6 +11,7 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialException
+import androidx.credentials.exceptions.NoCredentialException
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.R
@@ -387,6 +388,10 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
     private val _apiError = MutableStateFlow<String?>(null)
     private val _authLoading = MutableStateFlow(false)
     val authLoading: StateFlow<Boolean> = _authLoading.asStateFlow()
+    // Indica QUÉ proveedor está autenticando ("google", "github", "email") o null
+    // si no hay ninguno en curso. Permite mostrar el spinner solo en el botón pulsado.
+    private val _authProvider = MutableStateFlow<String?>(null)
+    val authProvider: StateFlow<String?> = _authProvider.asStateFlow()
     val apiError: StateFlow<String?> = _apiError.asStateFlow()
     private val _loadingMessage = MutableStateFlow("")
     val loadingMessage: StateFlow<String> = _loadingMessage.asStateFlow()
@@ -898,6 +903,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
      */
     fun signInWithGoogle(context: Context) {
         _authLoading.value = true
+        _authProvider.value = "google"
         viewModelScope.launch {
             try {
                 val credentialManager = CredentialManager.create(context)
@@ -931,6 +937,9 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
                 } else {
                     _apiError.value = "No se reconoció la credencial de Google recibida."
                 }
+            } catch (e: NoCredentialException) {
+                _apiError.value = "No hay ninguna cuenta de Google disponible en el dispositivo, " +
+                    "o falta registrar la huella SHA-1 de la app en Firebase."
             } catch (e: GetCredentialException) {
                 _apiError.value = "No se pudo iniciar sesión con Google: ${e.message ?: "cancelado"}"
             } catch (e: GoogleIdTokenParsingException) {
@@ -939,6 +948,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
                 _apiError.value = "Error al iniciar sesión con Google: ${e.message}"
             } finally {
                 _authLoading.value = false
+                _authProvider.value = null
             }
         }
     }
@@ -951,6 +961,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
      */
     fun signInWithGitHub(activity: Activity) {
         _authLoading.value = true
+        _authProvider.value = "github"
         val auth = FirebaseAuth.getInstance()
         val provider = OAuthProvider.newBuilder("github.com")
 
@@ -960,11 +971,13 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
         task
             .addOnSuccessListener { authResult ->
                 _authLoading.value = false
+                _authProvider.value = null
                 val email = authResult.user?.email ?: "usuario@github.com"
                 completeLogin(email)
             }
             .addOnFailureListener { e ->
                 _authLoading.value = false
+                _authProvider.value = null
                 _apiError.value = "No se pudo iniciar sesión con GitHub: ${e.message}"
             }
     }

@@ -1004,6 +1004,7 @@ fun OnboardingScreen(viewModel: ZaiViewModel, onFinish: () -> Unit) {
     var isRegisterMode by remember { mutableStateOf(false) }
     var isForgotPasswordMode by remember { mutableStateOf(false) }
     val authLoading by viewModel.authLoading.collectAsStateWithLifecycle()
+    val authProvider by viewModel.authProvider.collectAsStateWithLifecycle()
 
     Box(
         Modifier
@@ -1075,14 +1076,14 @@ fun OnboardingScreen(viewModel: ZaiViewModel, onFinish: () -> Unit) {
                                 
                                 // Google
                                 OutlinedButton(
-                                    onClick = { 
+                                    onClick = {
                                         viewModel.signInWithGoogle(context)
                                     },
-                                    enabled = !authLoading,
+                                    enabled = authProvider == null,
                                     modifier = Modifier.fillMaxWidth().height(48.dp),
                                     shape = RoundedCornerShape(12.dp)
                                 ) {
-                                    if (authLoading) {
+                                    if (authProvider == "google") {
                                         CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                                     } else {
                                         androidx.compose.foundation.Image(painter = androidx.compose.ui.res.painterResource(id = R.drawable.ic_google), contentDescription = "Google", modifier = Modifier.size(24.dp))
@@ -1093,14 +1094,14 @@ fun OnboardingScreen(viewModel: ZaiViewModel, onFinish: () -> Unit) {
                                 Spacer(Modifier.height(12.dp))
                                 // GitHub
                                 OutlinedButton(
-                                    onClick = { 
+                                    onClick = {
                                         viewModel.signInWithGitHub(context as Activity)
                                     },
-                                    enabled = !authLoading,
+                                    enabled = authProvider == null,
                                     modifier = Modifier.fillMaxWidth().height(48.dp),
                                     shape = RoundedCornerShape(12.dp)
                                 ) {
-                                    if (authLoading) {
+                                    if (authProvider == "github") {
                                         CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                                     } else {
                                         androidx.compose.foundation.Image(painter = androidx.compose.ui.res.painterResource(id = R.drawable.ic_github), contentDescription = "GitHub", modifier = Modifier.size(24.dp), colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurface))
