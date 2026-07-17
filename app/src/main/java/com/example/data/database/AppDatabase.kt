@@ -39,7 +39,6 @@ abstract class AppDatabase : RoomDatabase() {
                     "groq_chat_database"
                 )
                     .addMigrations(MIGRATION_3_4, MIGRATION_4_5)
-                    .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance
                 instance
