@@ -7,7 +7,7 @@
 # Moshi (JSON)
 -keep class com.squareup.moshi.** { *; }
 -keepclassmembers class * {
-    @com.squareup.moshi.JsonClass(generateAdapter = true) <fields>;
+    @com.squareup.moshi.JsonClass <fields>;
 }
 -dontwarn com.squareup.moshi.**
 
@@ -24,4 +24,4 @@
 # General attributes
 -keepattributes AndroidManifestApplication
 -keep public class * extends androidx.lifecycle.LiveData
--keepinterface * implements java.io.Serializable
+-keep interface * implements java.io.Serializable
