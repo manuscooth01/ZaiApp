@@ -19,7 +19,7 @@ class GroqApplication : Application() {
             ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE,
             ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW,
             ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> {
-                AppDatabase.getInstance(this).clearAllTables()
+                AppDatabase.getDatabase(this).clearAllTables()
             }
             ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN -> {
                 System.gc()
