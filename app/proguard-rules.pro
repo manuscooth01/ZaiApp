@@ -13,7 +13,7 @@
 
 # Retrofit (and its annotations)
 -keep class retrofit2.** { *; }
--keepattributes Signature, *Annotation *
+-keepattributes Signature, *Annotation*
 -keep interface retrofit2.Endpoint
 -dontwarn retrofit2.**
 
