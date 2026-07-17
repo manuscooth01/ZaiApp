@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import java.io.File
@@ -20,6 +21,9 @@ class SandboxWebView(context: Context) : WebView(context) {
         settings.domStorageEnabled = true
         settings.allowFileAccess = true
         settings.allowContentAccess = true
+        // Reutiliza la caché HTTP para no volver a descargar el runtime de Pyodide
+        // (~10-25 MB) en cada uso: ahorra datos, batería y CPU en gama baja.
+        settings.cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
         webChromeClient = WebChromeClient()
         webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {

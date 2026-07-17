@@ -1,9 +1,6 @@
 package com.example
 
 import android.app.Application
-import android.content.ComponentCallbacks2
-import android.os.Process
-import com.example.data.database.AppDatabase
 
 class GroqApplication : Application() {
     override fun onCreate() {
@@ -15,15 +12,17 @@ class GroqApplication : Application() {
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        when (level) {
-            ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE,
-            ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW,
-            ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> {
-                AppDatabase.getDatabase(this).clearAllTables()
-            }
-            ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN -> {
-                System.gc()
-            }
-        }
+        // IMPORTANTE: no se borra la base de datos aquí.
+        //
+        // Antes, ante presión de memoria (algo muy frecuente en gama baja) se llamaba a
+        // AppDatabase.getDatabase(this).clearAllTables(), lo que:
+        //   1) Ejecutaba una escritura de BD SÍNCRONA en el hilo principal → ANR/tirones.
+        //   2) Destruía TODOS los chats del usuario justo cuando el sistema pedía memoria.
+        // También se forzaba System.gc(), un antipatrón que provoca pausas de GC completas.
+        //
+        // El sistema ya recupera memoria por sí mismo; la app no debe eliminar datos del
+        // usuario ni forzar el recolector. Si en el futuro se quiere liberar memoria de forma
+        // segura, hacerlo con cachés no críticas (p. ej. la caché en memoria de imágenes),
+        // nunca con la base de datos.
     }
 }
