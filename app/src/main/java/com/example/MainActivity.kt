@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -1611,24 +1612,11 @@ fun ChatTab(
     Column(Modifier.fillMaxSize()) {
         FileChipsRow(pendingFiles) { idx -> viewModel.removePendingFile(idx) }
 
+        // La lista se extrae a su propio composable para que quede en un ámbito de
+        // recomposición separado del campo de texto: al escribir, ChatTab recompone
+        // pero ChatMessagesList se salta (sus parámetros no cambian).
         Box(Modifier.weight(1f)) {
-            if (messages.isEmpty() && !isGen) {
-                EmptyChatState()
-            } else {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(messages, key = { it.id }) { msg ->
-                        ChatBubble(msg)
-                    }
-                    if (isGen) {
-                        item { LoadingRow(loadMsg.ifBlank { "Pensando..." }) }
-                    }
-                }
-            }
+            ChatMessagesList(messages, isGen, loadMsg, listState)
         }
 
         InputBar(
@@ -1661,6 +1649,32 @@ fun ChatTab(
                 showCursorSheet = false
             }
         )
+    }
+}
+
+@Composable
+private fun ChatMessagesList(
+    messages: List<ChatMessage>,
+    isGen: Boolean,
+    loadMsg: String,
+    listState: LazyListState
+) {
+    if (messages.isEmpty() && !isGen) {
+        EmptyChatState()
+    } else {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            items(messages, key = { it.id }) { msg ->
+                ChatBubble(msg)
+            }
+            if (isGen) {
+                item { LoadingRow(loadMsg.ifBlank { "Pensando..." }) }
+            }
+        }
     }
 }
 
@@ -1812,27 +1826,10 @@ fun AgentTab(
             }
         }
 
+        // Lista extraída a su propio composable (ver ChatMessagesList) para aislar
+        // la recomposición del campo de texto.
         Box(Modifier.weight(1f)) {
-            if (messages.isEmpty() && !isGen) {
-                EmptyAgentState()
-            } else {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(messages, key = { it.id }) { msg ->
-                        if (msg.role == "assistant") AgentMessageCard(msg) else ChatBubble(msg)
-                    }
-                    if (isGen) {
-                        item {
-                            if (reasoning && steps.isNotEmpty()) ThinkingCard(steps, loadMsg)
-                            else LoadingRow(loadMsg.ifBlank { "Agente trabajando..." })
-                        }
-                    }
-                }
-            }
+            AgentMessagesList(messages, isGen, reasoning, steps, loadMsg, listState)
         }
 
         InputBar(
@@ -1869,6 +1866,37 @@ fun AgentTab(
 
     if (showPython) {
         PythonSandboxDialog(code = pythonCode, result = pythonResult, onResult = { pythonResult = it }, onDismiss = { showPython = false })
+    }
+}
+
+@Composable
+private fun AgentMessagesList(
+    messages: List<ChatMessage>,
+    isGen: Boolean,
+    reasoning: Boolean,
+    steps: List<String>,
+    loadMsg: String,
+    listState: LazyListState
+) {
+    if (messages.isEmpty() && !isGen) {
+        EmptyAgentState()
+    } else {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            items(messages, key = { it.id }) { msg ->
+                if (msg.role == "assistant") AgentMessageCard(msg) else ChatBubble(msg)
+            }
+            if (isGen) {
+                item {
+                    if (reasoning && steps.isNotEmpty()) ThinkingCard(steps, loadMsg)
+                    else LoadingRow(loadMsg.ifBlank { "Agente trabajando..." })
+                }
+            }
+        }
     }
 }
 
