@@ -162,7 +162,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
 
     fun clearChatHistory() {
         viewModelScope.launch(Dispatchers.IO) {
-            repository.deleteAllSessions()
+            repository.deleteAllDataForUser(_currentUserEmail.value)
             _chatMessages.value = emptyList()
             _agentMessages.value = emptyList()
         }
@@ -172,9 +172,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
         val cacheDir = getApplication<Application>().cacheDir
         cacheDir.deleteRecursively()
         cacheDir.mkdirs()
-    }
-            logAction("Logs", "Historial de registros limpiado.")
-        }
     }
 
     // ─── Onboarding ─────────────────────────────────────
