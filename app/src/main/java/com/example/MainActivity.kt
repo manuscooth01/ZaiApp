@@ -120,6 +120,7 @@ fun MainApp(viewModel: ZaiViewModel = viewModel()) {
     val context = LocalContext.current
     val showSettings by viewModel.showSettings.collectAsStateWithLifecycle()
     val apiError by viewModel.apiError.collectAsStateWithLifecycle()
+    val needsReauthForDeletion by viewModel.accountDeletionNeedsReauth.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
 
@@ -158,6 +159,30 @@ fun MainApp(viewModel: ZaiViewModel = viewModel()) {
             Toast.makeText(context, it, Toast.LENGTH_LONG).show()
             viewModel.clearApiError()
         }
+    }
+
+    if (needsReauthForDeletion) {
+        AlertDialog(
+            onDismissRequest = { viewModel.clearAccountDeletionReauthFlag() },
+            title = { Text("Vuelve a iniciar sesión", fontWeight = FontWeight.Bold) },
+            text = {
+                Text("Por seguridad, Firebase requiere que hayas iniciado sesión recientemente antes de eliminar tu cuenta. Cierra sesión y vuelve a iniciarla para intentarlo de nuevo.")
+            },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.clearAccountDeletionReauthFlag()
+                    viewModel.logout()
+                    showOnboarding = true
+                }) {
+                    Text("Cerrar sesión ahora")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.clearAccountDeletionReauthFlag() }) {
+                    Text("Cancelar")
+                }
+            }
+        )
     }
 
     if (showOnboarding) {
@@ -1001,20 +1026,23 @@ fun OnboardingScreen(viewModel: ZaiViewModel, onFinish: () -> Unit) {
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Top control: Skip button available on all screens
-                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-                    TextButton(
-                        onClick = {
-                            viewModel.completeOnboarding()
-                            onFinish()
+                // Top control: Skip button available on all screens except login (step 0),
+                // so authentication can no longer be bypassed as a guest.
+                if (step != 0) {
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                        TextButton(
+                            onClick = {
+                                viewModel.completeOnboarding()
+                                onFinish()
+                            }
+                        ) {
+                            Text(
+                                text = "Saltar",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
                         }
-                    ) {
-                        Text(
-                            text = "Saltar",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
                     }
                 }
 
