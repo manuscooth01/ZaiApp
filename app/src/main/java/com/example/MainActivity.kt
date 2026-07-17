@@ -2083,6 +2083,13 @@ fun PythonSandboxDialog(code: String, result: String, onResult: (String) -> Unit
 
                 AndroidView(
                     factory = { webView },
+                    // Libera el WebView (motor JS + runtime de Pyodide) al cerrar el diálogo.
+                    // Sin esto, el WebView queda en RAM tras cerrarse: fuga de memoria seria
+                    // en teléfonos de gama baja.
+                    onRelease = { web ->
+                        web.stopLoading()
+                        web.destroy()
+                    },
                     modifier = Modifier.fillMaxWidth().height(90.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
                 )
                 Spacer(Modifier.height(8.dp))
