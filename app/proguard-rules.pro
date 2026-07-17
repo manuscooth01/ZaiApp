@@ -1,48 +1,27 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# -------------------------------------------------
+# Room (persistencia SQLite)
+# -------------------------------------------------
+-keep class androidx.room.** { *; }
+-dontwarn androidx.room.**
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
-
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
-
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
-
-# --- Retrofit / OkHttp ---
--keepattributes Signature, InnerClasses, EnclosingMethod
--keepattributes RuntimeVisibleAnnotations, RuntimeVisibleParameterAnnotations
--keepattributes AnnotationDefault
--keep,allowobfuscation,allowshrinking interface retrofit2.Call
--keep,allowobfuscation,allowshrinking class retrofit2.Response
--dontwarn okhttp3.**
--dontwarn retrofit2.**
-
-# --- Moshi (mantiene los modelos de datos usados como JSON) ---
--keepclassmembers class com.example.data.api.** {
-    <fields>;
-    <init>(...);
+# Moshi (JSON)
+-keep class com.squareup.moshi.** { *; }
+-keepclassmembers class * {
+    @com.squareup.moshi.JsonClass(generateAdapter = true) <fields>;
 }
--keep @com.squareup.moshi.JsonClass class * { *; }
--keepnames @com.squareup.moshi.JsonClass class *
 -dontwarn com.squareup.moshi.**
 
-# --- Room ---
--keep class com.example.data.database.** { *; }
+# Retrofit (and its annotations)
+-keep class retrofit2.** { *; }
+-keepattributes Signature, *Annotation *
+-keep interface retrofit2.Endpoint
+-dontwarn retrofit2.**
 
-# --- Firebase Auth / Credential Manager / Google Identity ---
--keep class com.google.firebase.** { *; }
--keep class com.google.android.libraries.identity.googleid.** { *; }
--keep class androidx.credentials.** { *; }
--dontwarn com.google.firebase.**
+# Gson (if used elsewhere)
+-keep class com.google.gson.** { *; }
+-dontwarn com.google.gson.**
+
+# General attributes
+-keepattributes AndroidManifestApplication
+-keep public class * extends androidx.lifecycle.LiveData
+-keepinterface * implements java.io.Serializable

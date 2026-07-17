@@ -7,11 +7,11 @@ plugins {
 
 android {
     namespace = "com.example"
-    compileSdk = 36 // Adjusted from 36 to more stable 35 for compatibility
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.aistudio.groqapp"
-        minSdk = 24
+        minSdk = 29
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
@@ -22,6 +22,7 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            // signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -42,9 +43,17 @@ android {
         buildConfig = true
     }
 
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.5.10"
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+        jniLibs {
+            useLegacyPackaging = true
+            pickFirsts.add("lib/arm64-v8a/libc++_shared.so")
         }
     }
 
