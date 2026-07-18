@@ -1309,28 +1309,22 @@ fun OnboardingScreen(viewModel: ZaiViewModel, onFinish: () -> Unit) {
                                     ) {
                                         OutlinedTextField(
                                             value = model,
-                                            onValueChange = { 
-                                                model = it
-                                                viewModel.saveSelectedModel(it)
-                                            },
+                                            onValueChange = { model = it },
+                                            readOnly = true,
                                             modifier = Modifier.fillMaxWidth().menuAnchor(),
                                             trailingIcon = {
                                                 Icon(if (showModelDropdown) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, tint = MaterialTheme.colorScheme.primary)
                                             },
                                             colors = outlinedFieldColors(),
                                             shape = RoundedCornerShape(12.dp),
-                                            placeholder = { Text("Escribe o selecciona un modelo") }
+                                            placeholder = { Text("Selecciona un modelo") }
                                         )
                                         ExposedDropdownMenu(
                                             expanded = showModelDropdown,
                                             onDismissRequest = { showModelDropdown = false },
                                             modifier = Modifier.background(MaterialTheme.colorScheme.surface)
                                         ) {
-                                            val filteredModels = modelList.filter { 
-                                                it.contains(model, ignoreCase = true) 
-                                            }
-                                            val listToShow = if (filteredModels.isNotEmpty()) filteredModels else modelList
-                                            listToShow.forEach { m ->
+                                            modelList.forEach { m ->
                                                 DropdownMenuItem(
                                                     text = { Text(m, color = MaterialTheme.colorScheme.onSurface) },
                                                     onClick = {
