@@ -1272,6 +1272,7 @@ fun OnboardingScreen(viewModel: ZaiViewModel, onFinish: () -> Unit) {
                                         value = selectedProvider,
                                         onValueChange = {},
                                         readOnly = true,
+                                        leadingIcon = { ProviderBadge(selectedProvider) },
                                         modifier = Modifier.fillMaxWidth().menuAnchor(),
                                         trailingIcon = {
                                             Icon(if (showProviderDropdown) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, tint = MaterialTheme.colorScheme.primary)
@@ -1286,7 +1287,13 @@ fun OnboardingScreen(viewModel: ZaiViewModel, onFinish: () -> Unit) {
                                     ) {
                                         viewModel.providers.keys.forEach { p ->
                                             DropdownMenuItem(
-                                                text = { Text(p, color = MaterialTheme.colorScheme.onSurface) },
+                                                text = {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        ProviderBadge(p, Modifier.size(20.dp))
+                                                        Spacer(Modifier.width(10.dp))
+                                                        Text(p, color = MaterialTheme.colorScheme.onSurface)
+                                                    }
+                                                },
                                                 onClick = {
                                                     selectedProvider = p
                                                     viewModel.setProvider(p)
@@ -2463,6 +2470,7 @@ fun SettingsScreen(viewModel: ZaiViewModel, onDismiss: () -> Unit) {
                     value = provider,
                     onValueChange = {},
                     readOnly = true,
+                    leadingIcon = { ProviderBadge(provider) },
                     modifier = Modifier.fillMaxWidth().menuAnchor(),
                     trailingIcon = {
                         Icon(if (showProviderMenu) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, tint = MaterialTheme.colorScheme.primary)
@@ -2477,7 +2485,13 @@ fun SettingsScreen(viewModel: ZaiViewModel, onDismiss: () -> Unit) {
                 ) {
                     viewModel.providers.keys.forEach { p ->
                         DropdownMenuItem(
-                            text = { Text(p, color = MaterialTheme.colorScheme.onSurface) },
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    ProviderBadge(p, Modifier.size(20.dp))
+                                    Spacer(Modifier.width(10.dp))
+                                    Text(p, color = MaterialTheme.colorScheme.onSurface)
+                                }
+                            },
                             onClick = {
                                 provider = p
                                 url = viewModel.providers[p] ?: url
@@ -3213,6 +3227,42 @@ private fun LetterBadge(bg: Color, letter: String) {
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold
         )
+    }
+}
+
+private fun providerLogo(p: String): String? {
+    val s = p.lowercase()
+    return when {
+        "groq" in s -> Logos.PROVIDER_GROQ
+        "openai" in s -> Logos.PROVIDER_OPENAI
+        "ollama" in s -> Logos.PROVIDER_OLLAMA
+        "openrouter" in s -> Logos.PROVIDER_OPENROUTER
+        "together" in s -> Logos.PROVIDER_TOGETHER
+        else -> null
+    }
+}
+
+@Composable
+private fun ProviderBadge(provider: String, modifier: Modifier = Modifier) {
+    val bg = Color(0xFF64748B)
+    val letter = provider.firstOrNull()?.uppercase() ?: "?"
+    val logoUrl = remember(provider) { providerLogo(provider) }
+    Box(
+        modifier = modifier.size(22.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        if (logoUrl != null) {
+            SubcomposeAsyncImage(
+                model = logoUrl,
+                contentDescription = provider,
+                modifier = Modifier.size(22.dp),
+                contentScale = ContentScale.Fit,
+                loading = { LetterBadge(bg, letter) },
+                error = { LetterBadge(bg, letter) }
+            )
+        } else {
+            LetterBadge(bg, letter)
+        }
     }
 }
 

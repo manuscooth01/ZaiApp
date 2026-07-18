@@ -18,4 +18,11 @@ object Logos {
     const val MODEL_MISTRAL = "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/Mistral_AI_logo_%282025%E2%80%93%29.svg/120px-Mistral_AI_logo_%282025%E2%80%93%29.svg.png" // Mistral / Mixtral
     const val MODEL_QWEN = "https://upload.wikimedia.org/wikipedia/commons/thumb/6/69/Qwen_logo.svg/120px-Qwen_logo.svg.png"                                  // Qwen
     const val MODEL_MICROSOFT = "https://upload.wikimedia.org/wikipedia/commons/thumb/4/44/Microsoft_logo.svg/120px-Microsoft_logo.svg.png"                   // Phi
+
+    // Logos de proveedores (PNG verificados HTTP 200 el 2026-07-18). Coil NO decodifica SVG.
+    const val PROVIDER_OPENAI = MODEL_OPENAI                                                                                                                              // OpenAI
+    const val PROVIDER_GROQ = "https://upload.wikimedia.org/wikipedia/commons/thumb/c/cc/Groq_logo.svg/120px-Groq_logo.svg.png"                                   // Groq
+    const val PROVIDER_OLLAMA = "https://upload.wikimedia.org/wikipedia/commons/thumb/3/31/Ollama-logo.svg/120px-Ollama-logo.svg.png"                            // Ollama
+    const val PROVIDER_OPENROUTER = "https://upload.wikimedia.org/wikipedia/commons/thumb/c/ca/OpenRouter_Logo.svg/120px-OpenRouter_Logo.svg.png"             // OpenRouter
+    const val PROVIDER_TOGETHER = "https://cdn.prod.website-files.com/69654e88dce9154b5f1206dd/69aaa5310313790ada6393ec_together-ai-logo.png"                 // Together
 }
