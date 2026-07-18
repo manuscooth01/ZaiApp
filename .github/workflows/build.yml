@@ -42,6 +42,15 @@ jobs:
           echo "$KEYSTORE_BASE64" | base64 -d > app/release.keystore
           echo "Keystore decodificada en app/release.keystore"
 
+      - name: Imprimir SHA-1 de firma (para registrar en Firebase)
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          echo "SHA-1 registrada en Firebase (google-services.json): bacecf34b3021b32c4d777060421166f73ab1871"
+          echo "SHA-1 del keystore con el que se FIRMA el APK (debe coincidir con la anterior):"
+          keytool -list -v -keystore app/release.keystore -alias "$KEY_ALIAS" -storepass:env KEYSTORE_PASSWORD 2>&1 | grep -iE "Alias name|SHA1|SHA256" || echo "No se pudo leer el keystore"
+
       - name: Build Release APK
         env:
           KEYSTORE_FILE: release.keystore
