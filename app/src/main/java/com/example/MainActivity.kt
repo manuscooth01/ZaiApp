@@ -26,6 +26,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.Spring
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -1095,7 +1096,8 @@ fun OnboardingScreen(viewModel: ZaiViewModel, onFinish: () -> Unit) {
                                         viewModel.signInWithGoogle(context)
                                     },
                                     enabled = authProvider == null,
-                                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                                        .focusProperties { canFocus = false },
                                     shape = RoundedCornerShape(12.dp)
                                 ) {
                                     if (authProvider == "google") {
@@ -1113,7 +1115,8 @@ fun OnboardingScreen(viewModel: ZaiViewModel, onFinish: () -> Unit) {
                                         viewModel.signInWithGitHub(context as Activity)
                                     },
                                     enabled = authProvider == null,
-                                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                                        .focusProperties { canFocus = false },
                                     shape = RoundedCornerShape(12.dp)
                                 ) {
                                     if (authProvider == "github") {
@@ -1128,7 +1131,8 @@ fun OnboardingScreen(viewModel: ZaiViewModel, onFinish: () -> Unit) {
                                 // Email
                                 OutlinedButton(
                                     onClick = { showLoginDialog = true },
-                                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                                        .focusProperties { canFocus = false },
                                     shape = RoundedCornerShape(12.dp)
                                 ) {
                                     Icon(Icons.Default.Email, "Email", tint = MaterialTheme.colorScheme.onSurface)
@@ -1296,8 +1300,8 @@ fun OnboardingScreen(viewModel: ZaiViewModel, onFinish: () -> Unit) {
                                 Spacer(Modifier.height(12.dp))
                                 Text("Modelo de IA", color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.Start))
                                 Spacer(Modifier.height(6.dp))
-                                if (selectedProvider == "Groq" || selectedProvider == "OpenAI") {
-                                    val modelList = if (selectedProvider == "Groq") viewModel.groqModels else viewModel.openAiModels
+                                val modelList = viewModel.getFallbackModels(selectedProvider)
+                                if (modelList.isNotEmpty()) {
                                     ExposedDropdownMenuBox(
                                         expanded = showModelDropdown,
                                         onExpandedChange = { showModelDropdown = !showModelDropdown },
@@ -1305,21 +1309,28 @@ fun OnboardingScreen(viewModel: ZaiViewModel, onFinish: () -> Unit) {
                                     ) {
                                         OutlinedTextField(
                                             value = model,
-                                            onValueChange = {},
-                                            readOnly = true,
+                                            onValueChange = { 
+                                                model = it
+                                                viewModel.saveSelectedModel(it)
+                                            },
                                             modifier = Modifier.fillMaxWidth().menuAnchor(),
                                             trailingIcon = {
                                                 Icon(if (showModelDropdown) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, tint = MaterialTheme.colorScheme.primary)
                                             },
                                             colors = outlinedFieldColors(),
-                                            shape = RoundedCornerShape(12.dp)
+                                            shape = RoundedCornerShape(12.dp),
+                                            placeholder = { Text("Escribe o selecciona un modelo") }
                                         )
                                         ExposedDropdownMenu(
                                             expanded = showModelDropdown,
                                             onDismissRequest = { showModelDropdown = false },
                                             modifier = Modifier.background(MaterialTheme.colorScheme.surface)
                                         ) {
-                                            modelList.forEach { m ->
+                                            val filteredModels = modelList.filter { 
+                                                it.contains(model, ignoreCase = true) 
+                                            }
+                                            val listToShow = if (filteredModels.isNotEmpty()) filteredModels else modelList
+                                            listToShow.forEach { m ->
                                                 DropdownMenuItem(
                                                     text = { Text(m, color = MaterialTheme.colorScheme.onSurface) },
                                                     onClick = {
@@ -2489,33 +2500,68 @@ fun SettingsScreen(viewModel: ZaiViewModel, onDismiss: () -> Unit) {
                 placeholder = { Text("http://localhost:11434/v1") }
             )
 
-            Spacer(Modifier.height(20.dp))
-            Text("Modelo Predeterminado", color = MaterialTheme.colorScheme.primary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Modelo Predeterminado", color = MaterialTheme.colorScheme.primary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                
+                val isLoadingModels by viewModel.isLoadingModels.collectAsStateWithLifecycle()
+                val isFetchEnabled = provider == "Ollama" || key.isNotBlank()
+                if (isFetchEnabled) {
+                    TextButton(
+                        onClick = { viewModel.loadModelsFromApi(url, key, provider) },
+                        enabled = !isLoadingModels,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        if (isLoadingModels) {
+                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 1.5.dp)
+                            Spacer(Modifier.width(4.dp))
+                            Text("Cargando...", fontSize = 11.sp)
+                        } else {
+                            Icon(Icons.Default.Refresh, null, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Actualizar desde API", fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
             Spacer(Modifier.height(8.dp))
-            if (provider == "Groq" || provider == "OpenAI") {
-                val modelList = if (provider == "Groq") viewModel.groqModels else viewModel.openAiModels
-                ExposedDropdownMenuBox(
-                    expanded = showModelMenu,
-                    onExpandedChange = { showModelMenu = !showModelMenu },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    OutlinedTextField(
-                        value = model,
-                        onValueChange = {},
-                        readOnly = true,
-                        modifier = Modifier.fillMaxWidth().menuAnchor(),
-                        trailingIcon = {
-                            Icon(if (showModelMenu) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, tint = MaterialTheme.colorScheme.primary)
-                        },
-                        colors = outlinedFieldColors(),
-                        shape = RoundedCornerShape(16.dp)
-                    )
+
+            val availableModelsList by viewModel.availableModels.collectAsStateWithLifecycle()
+            val modelsLoadError by viewModel.modelsLoadError.collectAsStateWithLifecycle()
+
+            ExposedDropdownMenuBox(
+                expanded = showModelMenu,
+                onExpandedChange = { showModelMenu = !showModelMenu },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    value = model,
+                    onValueChange = { 
+                        model = it
+                        viewModel.saveSelectedModel(it)
+                    },
+                    modifier = Modifier.fillMaxWidth().menuAnchor(),
+                    trailingIcon = {
+                        Icon(if (showModelMenu) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, tint = MaterialTheme.colorScheme.primary)
+                    },
+                    colors = outlinedFieldColors(),
+                    shape = RoundedCornerShape(16.dp),
+                    placeholder = { Text("Escribe o selecciona un modelo") }
+                )
+                if (availableModelsList.isNotEmpty()) {
                     ExposedDropdownMenu(
                         expanded = showModelMenu,
                         onDismissRequest = { showModelMenu = false },
                         modifier = Modifier.background(MaterialTheme.colorScheme.surface)
                     ) {
-                        modelList.forEach { m ->
+                        val filteredModels = availableModelsList.filter { 
+                            it.contains(model, ignoreCase = true) 
+                        }
+                        val listToShow = if (filteredModels.isNotEmpty()) filteredModels else availableModelsList
+                        listToShow.forEach { m ->
                             DropdownMenuItem(
                                 text = { Text(m, color = MaterialTheme.colorScheme.onSurface) },
                                 onClick = {
@@ -2527,18 +2573,14 @@ fun SettingsScreen(viewModel: ZaiViewModel, onDismiss: () -> Unit) {
                         }
                     }
                 }
-            } else {
-                OutlinedTextField(
-                    value = model,
-                    onValueChange = { 
-                        model = it
-                        viewModel.saveSelectedModel(it)
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = outlinedFieldColors(),
-                    shape = RoundedCornerShape(16.dp),
-                    singleLine = true,
-                    placeholder = { Text("llama-3.1-8b-instant", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
+            if (!modelsLoadError.isNullOrEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = modelsLoadError!!,
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(horizontal = 8.dp)
                 )
             }
 

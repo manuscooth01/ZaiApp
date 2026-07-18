@@ -3,6 +3,7 @@ package com.example.ui
 import android.app.Activity
 import android.app.Application
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.net.Uri
 import android.speech.tts.TextToSpeech
@@ -229,6 +230,79 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
         "gpt-3.5-turbo"
     )
 
+    val togetherModels = listOf(
+        "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+        "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+        "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
+        "mistralai/Mixtral-8x7B-Instruct-v0.1",
+        "Qwen/Qwen2.5-72B-Instruct"
+    )
+
+    val openRouterModels = listOf(
+        "meta-llama/llama-3.1-8b-instruct",
+        "meta-llama/llama-3.1-70b-instruct",
+        "google/gemini-flash-1.5",
+        "google/gemini-pro-1.5",
+        "openai/gpt-4o-mini",
+        "deepseek/deepseek-chat"
+    )
+
+    val ollamaModels = listOf(
+        "llama3",
+        "llama3.1",
+        "gemma2",
+        "mistral",
+        "phi3"
+    )
+
+    fun getFallbackModels(provider: String): List<String> {
+        return when (provider) {
+            "Groq" -> groqModels
+            "OpenAI" -> openAiModels
+            "Together" -> togetherModels
+            "OpenRouter" -> openRouterModels
+            "Ollama" -> ollamaModels
+            else -> emptyList()
+        }
+    }
+
+    private val _availableModels = MutableStateFlow<List<String>>(
+        getFallbackModels(prefs.getString("provider", "Groq") ?: "Groq")
+    )
+    val availableModels: StateFlow<List<String>> = _availableModels.asStateFlow()
+
+    private val _isLoadingModels = MutableStateFlow(false)
+    val isLoadingModels: StateFlow<Boolean> = _isLoadingModels.asStateFlow()
+
+    private val _modelsLoadError = MutableStateFlow<String?>(null)
+    val modelsLoadError: StateFlow<String?> = _modelsLoadError.asStateFlow()
+
+    fun loadModelsFromApi(baseUrl: String, apiKey: String, provider: String) {
+        _isLoadingModels.value = true
+        _modelsLoadError.value = null
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = repository.fetchModels(baseUrl, apiKey, provider)
+            withContext(Dispatchers.Main) {
+                if (result.isSuccess) {
+                    val fetchedList = result.getOrThrow()
+                    _availableModels.value = fetchedList
+                    _modelsLoadError.value = null
+                    val currentModel = _selectedModel.value
+                    if (fetchedList.isNotEmpty() && !fetchedList.contains(currentModel)) {
+                        val firstModel = fetchedList.first()
+                        _selectedModel.value = firstModel
+                        saveSelectedModel(firstModel)
+                    }
+                } else {
+                    _modelsLoadError.value = result.exceptionOrNull()?.message ?: "Error al obtener modelos de la API."
+                    // Fallback to static list
+                    _availableModels.value = getFallbackModels(provider)
+                }
+                _isLoadingModels.value = false
+            }
+        }
+    }
+
     private val _selectedProvider =
         MutableStateFlow(prefs.getString("provider", "Groq") ?: "Groq")
     val selectedProvider: StateFlow<String> = _selectedProvider.asStateFlow()
@@ -241,6 +315,8 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
             _selectedModel.value = defaultModel
         }
         prefs.edit().putString("provider", p).apply()
+        _availableModels.value = getFallbackModels(p)
+        _modelsLoadError.value = null
     }
 
     private val _apiKey = MutableStateFlow(securePrefs?.getString("api_key", "") ?: prefs.getString("api_key", "") ?: "")
@@ -932,23 +1008,41 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
      * Requiere que "default_web_client_id" exista (lo genera el plugin google-services
      * a partir del client OAuth de tipo 3 en google-services.json).
      */
+    private fun findActivity(context: Context): Activity? {
+        var currentContext = context
+        while (currentContext is ContextWrapper) {
+            if (currentContext is Activity) {
+                return currentContext
+            }
+            currentContext = currentContext.baseContext
+        }
+        return null
+    }
+
     fun signInWithGoogle(context: Context) {
         _authLoading.value = true
         _authProvider.value = "google"
         viewModelScope.launch {
             try {
-                val credentialManager = CredentialManager.create(context)
+                val activity = findActivity(context) ?: (context as? Activity)
+                if (activity == null) {
+                    _apiError.value = "Se requiere un contexto de Activity para iniciar sesión con Google."
+                    _authLoading.value = false
+                    _authProvider.value = null
+                    return@launch
+                }
+                val credentialManager = CredentialManager.create(activity)
 
                 val googleIdOption = GetGoogleIdOption.Builder()
                     .setFilterByAuthorizedAccounts(false)
-                    .setServerClientId(context.getString(R.string.default_web_client_id))
+                    .setServerClientId(activity.getString(R.string.default_web_client_id))
                     .build()
 
                 val request = GetCredentialRequest.Builder()
                     .addCredentialOption(googleIdOption)
                     .build()
 
-                val result = credentialManager.getCredential(context, request)
+                val result = credentialManager.getCredential(activity, request)
                 val credential = result.credential
 
                 if (credential is CustomCredential &&

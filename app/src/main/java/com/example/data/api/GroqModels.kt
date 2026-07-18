@@ -44,3 +44,14 @@ data class GroqError(
     val message: String? = null,
     val type: String? = null
 )
+
+@JsonClass(generateAdapter = true)
+data class ModelItem(
+    val id: String
+)
+
+@JsonClass(generateAdapter = true)
+data class ModelsListResponse(
+    val data: List<ModelItem>? = null
+)
+

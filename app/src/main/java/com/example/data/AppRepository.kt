@@ -3,6 +3,7 @@ package com.example.data
 import com.example.data.api.GroqChatRequest
 import com.example.data.api.GroqMessage
 import com.example.data.api.GroqService
+import com.example.data.api.ModelsListResponse
 import com.example.data.database.ChatDao
 import com.example.data.database.ChatMessage
 import com.example.data.database.ChatSession
@@ -187,6 +188,48 @@ class AppRepository(private val chatDao: ChatDao) {
         )
         return getChatCompletion(baseUrl, apiKey, model, messages, provider = provider).map { raw ->
             "Conexión exitosa. Modelo respondió: ${raw.take(120)}"
+        }
+    }
+
+    suspend fun fetchModels(
+        baseUrl: String,
+        apiKey: String,
+        provider: String = ""
+    ): Result<List<String>> {
+        return try {
+            val isOllama = provider == "Ollama" || baseUrl.contains("11434") || baseUrl.contains("ollama", ignoreCase = true)
+            if (apiKey.isBlank() && !isOllama) {
+                return Result.failure(
+                    Exception("Falta la API Key. Configúrala en Ajustes.")
+                )
+            }
+            val bearerToken = if (apiKey.isNotBlank()) "Bearer $apiKey" else "Bearer none"
+            val cleanBaseUrl = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
+            val fullUrl = "${cleanBaseUrl}models"
+            val response = groqService.getModelsList(fullUrl, bearerToken)
+
+            if (response.isSuccessful) {
+                val body = response.body()
+                val list = body?.data?.map { it.id } ?: emptyList()
+                if (list.isNotEmpty()) {
+                    Result.success(list)
+                } else {
+                    Result.failure(Exception("La API no devolvió ningún modelo disponible."))
+                }
+            } else {
+                val errorCode = response.code()
+                val errorBody = try { response.errorBody()?.string()?.take(500) } catch (_: Exception) { null }
+                val errorMessage = when (errorCode) {
+                    401 -> "Clave API inválida (401). Verifica en Ajustes."
+                    403 -> "Acceso denegado (403). La API o red bloquea la petición."
+                    else -> "Error al consultar modelos ($errorCode): ${errorBody ?: response.message()}"
+                }
+                Result.failure(Exception(errorMessage))
+            }
+        } catch (e: Exception) {
+            Result.failure(
+                Exception("Error de conexión: ${e.localizedMessage ?: "No se pudo conectar para obtener modelos"}")
+            )
         }
     }
 
