@@ -64,6 +64,8 @@ import android.content.Context
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.foundation.text.selection.EmptyTextToolbar
+import androidx.compose.foundation.text.selection.LocalTextToolbar
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
@@ -1314,19 +1316,21 @@ fun OnboardingScreen(viewModel: ZaiViewModel, onFinish: () -> Unit) {
                                         onExpandedChange = { showModelDropdown = !showModelDropdown },
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        OutlinedTextField(
-                                            value = model,
-                                            onValueChange = { model = it },
-                                            readOnly = true,
-                                            leadingIcon = { ModelBadge(model) },
-                                            modifier = Modifier.fillMaxWidth().menuAnchor(),
-                                            trailingIcon = {
-                                                Icon(if (showModelDropdown) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, tint = MaterialTheme.colorScheme.primary)
-                                            },
-                                            colors = outlinedFieldColors(),
-                                            shape = RoundedCornerShape(12.dp),
-                                            placeholder = { Text("Selecciona un modelo") }
-                                        )
+                                        CompositionLocalProvider(LocalTextToolbar provides EmptyTextToolbar) {
+                                            OutlinedTextField(
+                                                value = model,
+                                                onValueChange = { model = it },
+                                                readOnly = true,
+                                                leadingIcon = { ModelBadge(model) },
+                                                modifier = Modifier.fillMaxWidth().menuAnchor(),
+                                                trailingIcon = {
+                                                    Icon(if (showModelDropdown) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, tint = MaterialTheme.colorScheme.primary)
+                                                },
+                                                colors = outlinedFieldColors(),
+                                                shape = RoundedCornerShape(12.dp),
+                                                placeholder = { Text("Selecciona un modelo") }
+                                            )
+                                        }
                                         ExposedDropdownMenu(
                                             expanded = showModelDropdown,
                                             onDismissRequest = { showModelDropdown = false },
@@ -2552,33 +2556,36 @@ fun SettingsScreen(viewModel: ZaiViewModel, onDismiss: () -> Unit) {
                 onExpandedChange = { showModelMenu = !showModelMenu },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                OutlinedTextField(
-                    value = model,
-                    onValueChange = { 
-                        model = it
-                        viewModel.saveSelectedModel(it)
-                    },
-                    modifier = Modifier.fillMaxWidth().menuAnchor(),
-                    trailingIcon = {
-                        Icon(if (showModelMenu) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, tint = MaterialTheme.colorScheme.primary)
-                    },
-                    colors = outlinedFieldColors(),
-                    shape = RoundedCornerShape(16.dp),
-                    placeholder = { Text("Escribe o selecciona un modelo") }
-                )
+                CompositionLocalProvider(LocalTextToolbar provides EmptyTextToolbar) {
+                    OutlinedTextField(
+                        value = model,
+                        onValueChange = {},
+                        readOnly = true,
+                        leadingIcon = { ModelBadge(model) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor(),
+                        trailingIcon = {
+                            Icon(if (showModelMenu) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, tint = MaterialTheme.colorScheme.primary)
+                        },
+                        colors = outlinedFieldColors(),
+                        shape = RoundedCornerShape(16.dp),
+                        placeholder = { Text("Selecciona un modelo") }
+                    )
+                }
                 if (availableModelsList.isNotEmpty()) {
                     ExposedDropdownMenu(
                         expanded = showModelMenu,
                         onDismissRequest = { showModelMenu = false },
                         modifier = Modifier.background(MaterialTheme.colorScheme.surface)
                     ) {
-                        val filteredModels = availableModelsList.filter { 
-                            it.contains(model, ignoreCase = true) 
-                        }
-                        val listToShow = if (filteredModels.isNotEmpty()) filteredModels else availableModelsList
-                        listToShow.forEach { m ->
+                        availableModelsList.forEach { m ->
                             DropdownMenuItem(
-                                text = { Text(m, color = MaterialTheme.colorScheme.onSurface) },
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        ModelBadge(m, Modifier.size(20.dp))
+                                        Spacer(Modifier.width(10.dp))
+                                        Text(m, color = MaterialTheme.colorScheme.onSurface)
+                                    }
+                                },
                                 onClick = {
                                     model = m
                                     viewModel.saveSelectedModel(m)
@@ -3203,7 +3210,8 @@ private fun ModelBadge(modelId: String, modifier: Modifier = Modifier) {
                 painter = painterResource(res),
                 contentDescription = letter,
                 modifier = Modifier.size(22.dp),
-                contentScale = ContentScale.Fit
+                contentScale = ContentScale.Fit,
+                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurface)
             )
         } else {
             LetterBadge(bg, letter)
@@ -3252,7 +3260,8 @@ private fun ProviderBadge(provider: String, modifier: Modifier = Modifier) {
                 painter = painterResource(res),
                 contentDescription = provider,
                 modifier = Modifier.size(22.dp),
-                contentScale = ContentScale.Fit
+                contentScale = ContentScale.Fit,
+                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurface)
             )
         } else {
             LetterBadge(bg, letter)
