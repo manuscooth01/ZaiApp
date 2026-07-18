@@ -1042,9 +1042,45 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
                     .addCredentialOption(googleIdOption)
                     .build()
 
-                val result = credentialManager.getCredential(activity, request)
-                val credential = result.credential
+                // Reintentar: Credential Manager a veces falla con NoCredentialException en
+                // la PRIMERA llamada (el proveedor de Google aun no esta "caliente" en el
+                // dispositivo) y funciona en el reintento. Sin esto el usuario debe pulsar
+                // dos veces. Se reintenta hasta 3 veces antes de mostrar el error.
+                var response: androidx.credentials.GetCredentialResponse? = null
+                var lastEx: Exception? = null
+                for (attempt in 0 until 3) {
+                    try {
+                        response = credentialManager.getCredential(activity, request)
+                        lastEx = null
+                        break
+                    } catch (e: NoCredentialException) {
+                        lastEx = e
+                    } catch (e: GetCredentialException) {
+                        // No reintentar si el usuario cancelo explicitamente el selector.
+                        if (e.type == "android.credentials.GetCredentialException.TYPE_USER_CANCELED") {
+                            lastEx = e
+                            break
+                        }
+                        lastEx = e
+                    }
+                    if (attempt < 2) kotlinx.coroutines.delay(250)
+                }
 
+                if (response == null) {
+                    when (lastEx) {
+                        is NoCredentialException ->
+                            _apiError.value = "Google no encontró credenciales en el dispositivo. " +
+                                "Si ya agregaste la huella SHA-1 en Firebase, añade una cuenta de Google " +
+                                "en Ajustes > Cuentas del dispositivo. Detalle: ${lastEx.message ?: lastEx.type ?: "sin detalle"}"
+                        is GetCredentialException ->
+                            _apiError.value = "No se pudo iniciar sesión con Google: ${lastEx.message ?: "cancelado"}"
+                        else ->
+                            _apiError.value = "Error al iniciar sesión con Google: ${lastEx?.message}"
+                    }
+                    return@launch
+                }
+
+                val credential = response.credential
                 if (credential is CustomCredential &&
                     credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
                 ) {
@@ -1062,14 +1098,6 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
                 } else {
                     _apiError.value = "No se reconoció la credencial de Google recibida."
                 }
-            } catch (e: NoCredentialException) {
-                // La huella SHA-1 ya se verifica en CI y coincide con google-services.json,
-                // así que lo habitual es que no haya cuenta de Google a nivel sistema.
-                _apiError.value = "Google no encontró credenciales en el dispositivo. " +
-                    "Si ya agregaste la huella SHA-1 en Firebase, añade una cuenta de Google " +
-                    "en Ajustes > Cuentas del dispositivo. Detalle: ${e.message ?: e.type ?: "sin detalle"}"
-            } catch (e: GetCredentialException) {
-                _apiError.value = "No se pudo iniciar sesión con Google: ${e.message ?: "cancelado"}"
             } catch (e: GoogleIdTokenParsingException) {
                 _apiError.value = "El token de Google recibido no es válido."
             } catch (e: Exception) {
