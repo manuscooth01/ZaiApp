@@ -92,6 +92,7 @@ import com.example.ui.theme.*
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
+import java.io.File
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -102,12 +103,24 @@ class MainActivity : ComponentActivity() {
             val viewModel: ZaiViewModel = viewModel()
             val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
             val primaryColorInt by viewModel.primaryColor.collectAsStateWithLifecycle()
-            
+            val bgUri by viewModel.backgroundImageUri.collectAsStateWithLifecycle()
+            val bgTransparency by viewModel.backgroundTransparency.collectAsStateWithLifecycle()
+
             MyApplicationTheme(
                 themeMode = themeMode,
                 primaryColor = Color(primaryColorInt)
             ) {
-                MainApp(viewModel)
+                Box(Modifier.fillMaxSize()) {
+                    if (bgUri.isNotEmpty()) {
+                        AsyncImage(
+                            model = if (bgUri.startsWith("/")) File(bgUri) else bgUri,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize().alpha(bgTransparency),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
+                    MainApp(viewModel)
+                }
             }
         }
     }
@@ -118,6 +131,7 @@ class MainActivity : ComponentActivity() {
 fun MainApp(viewModel: ZaiViewModel = viewModel()) {
     val onboardingDone by viewModel.onboardingCompleted.collectAsStateWithLifecycle()
     var showOnboarding by remember(onboardingDone) { mutableStateOf(!onboardingDone) }
+    val hasBackground by viewModel.backgroundImageUri.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val showSettings by viewModel.showSettings.collectAsStateWithLifecycle()
     val apiError by viewModel.apiError.collectAsStateWithLifecycle()
@@ -222,7 +236,7 @@ fun MainApp(viewModel: ZaiViewModel = viewModel()) {
             }
         ) {
             Scaffold(
-                containerColor = MaterialTheme.colorScheme.background,
+                containerColor = if (hasBackground.isNotEmpty()) Color.Transparent else MaterialTheme.colorScheme.background,
                 topBar = {
                     AppTopBarFixed(
                         viewModel = viewModel,
@@ -235,7 +249,7 @@ fun MainApp(viewModel: ZaiViewModel = viewModel()) {
                     Modifier
                         .fillMaxSize()
                         .padding(padding)
-                        .background(MaterialTheme.colorScheme.background)
+                        .background(if (hasBackground.isNotEmpty()) Color.Transparent else MaterialTheme.colorScheme.background)
                 ) {
                     val currentTab by viewModel.currentTab.collectAsStateWithLifecycle()
                     when (currentTab) {
@@ -3110,7 +3124,7 @@ fun PersonalizationScreen(
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let { viewModel.setBackgroundImageUri(it.toString()) }
+        uri?.let { viewModel.setBackgroundImageFromUri(it) }
     }
     
     val bgUri by viewModel.backgroundImageUri.collectAsStateWithLifecycle()
@@ -3152,7 +3166,7 @@ fun PersonalizationScreen(
                 // Background image simulation
                 if (bgUri.isNotEmpty()) {
                     AsyncImage(
-                        model = bgUri,
+                        model = if (bgUri.startsWith("/")) File(bgUri) else bgUri,
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize().alpha(bgTransparency),
                         contentScale = ContentScale.Crop

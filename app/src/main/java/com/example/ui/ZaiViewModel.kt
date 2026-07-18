@@ -334,6 +334,32 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
         prefs.edit().putString("background_uri", uri).apply()
     }
 
+    // Copia la imagen elegida al almacenamiento interno de la app y guarda esa ruta.
+    // Necesario porque las URI de GetContent() son temporales: al reiniciar la app se
+    // pierde el permiso de lectura y la imagen ya no carga. Con una copia interna
+    // la persistencia es permanente y no depende de permisos SAF.
+    fun setBackgroundImageFromUri(uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val ctx = getApplication<Application>()
+                // Nombre unico por timestamp: asi la ruta cambia entre imagenes distintas
+                // y tanto el StateFlow como Coil detectan el cambio y recargan.
+                val file = File(ctx.filesDir, "background_image_${System.currentTimeMillis()}.jpg")
+                ctx.contentResolver.openInputStream(uri)?.use { input ->
+                    FileOutputStream(file).use { output -> input.copyTo(output) }
+                } ?: return@launch
+                // Copia correcta: borrar fondos anteriores para no acumular archivos.
+                ctx.filesDir.listFiles { f -> f.name.startsWith("background_image") && f.name != file.name }
+                    ?.forEach { it.delete() }
+                val path = file.absolutePath
+                _backgroundImageUri.value = path
+                prefs.edit().putString("background_uri", path).apply()
+            } catch (e: Exception) {
+                // Si falla la copia, no cambiamos el fondo (se mantiene el anterior).
+            }
+        }
+    }
+
     private val _backgroundTransparency = MutableStateFlow(prefs.getFloat("background_transparency", 0.5f))
     val backgroundTransparency: StateFlow<Float> = _backgroundTransparency.asStateFlow()
     fun setBackgroundTransparency(transparency: Float) {
