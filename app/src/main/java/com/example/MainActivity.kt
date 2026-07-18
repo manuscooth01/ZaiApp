@@ -3200,13 +3200,17 @@ private fun ModelBadge(modelId: String, modifier: Modifier = Modifier) {
         contentAlignment = Alignment.Center
     ) {
         if (res != null) {
-            Image(
-                painter = painterResource(res),
-                contentDescription = letter,
-                modifier = Modifier.size(22.dp),
-                contentScale = ContentScale.Fit,
-                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurface)
-            )
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color.White, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    painter = painterResource(res),
+                    contentDescription = letter,
+                    modifier = Modifier.fillMaxSize(0.82f),
+                    contentScale = ContentScale.Fit
+                )
+            }
         } else {
             LetterBadge(bg, letter)
         }
@@ -3250,13 +3254,17 @@ private fun ProviderBadge(provider: String, modifier: Modifier = Modifier) {
         contentAlignment = Alignment.Center
     ) {
         if (res != null) {
-            Image(
-                painter = painterResource(res),
-                contentDescription = provider,
-                modifier = Modifier.size(22.dp),
-                contentScale = ContentScale.Fit,
-                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurface)
-            )
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color.White, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    painter = painterResource(res),
+                    contentDescription = provider,
+                    modifier = Modifier.fillMaxSize(0.82f),
+                    contentScale = ContentScale.Fit
+                )
+            }
         } else {
             LetterBadge(bg, letter)
         }
