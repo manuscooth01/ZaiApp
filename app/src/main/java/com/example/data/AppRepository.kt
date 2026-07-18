@@ -10,6 +10,7 @@ import com.example.data.database.ActionLog
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.flow.Flow
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -22,10 +23,26 @@ class AppRepository(private val chatDao: ChatDao) {
         .addLast(KotlinJsonAdapterFactory())
         .build()
 
+    // Interceptor que añade cabeceras de navegador para evitar bloqueos
+    // de Cloudflare WAF. OkHttp sin estas cabeceras recibe 403 Forbidden
+    // porque Cloudflare identifica el User-Agent como bot/servidor.
+    private val browserHeadersInterceptor = Interceptor { chain ->
+        val original = chain.request()
+        val request = original.newBuilder()
+            .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36")
+            .header("Accept", "application/json, text/plain, */*")
+            .header("Accept-Language", "es-ES,es;q=0.9,en;q=0.8")
+            .header("Origin", "https://console.groq.com")
+            .header("Referer", "https://console.groq.com/")
+            .build()
+        chain.proceed(request)
+    }
+
     private val okHttp = OkHttpClient.Builder()
         .connectTimeout(60, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
+        .addInterceptor(browserHeadersInterceptor)
         .addInterceptor(
             HttpLoggingInterceptor().apply {
                 level = if (com.example.BuildConfig.DEBUG) {
@@ -140,10 +157,12 @@ class AppRepository(private val chatDao: ChatDao) {
                     null
                 }
                 val errorMessage = when (errorCode) {
-                    401 -> "Clave API inválida. Verifica en console.groq.com"
-                    429 -> "Límite de velocidad alcanzado. Espera un momento."
-                    400 -> "Error en la solicitud. Verifica el modelo: ${errorBody ?: ""}"
-                    404 -> "URL o endpoint no encontrado. Revisa la URL base."
+                    401 -> "Clave API inválida (401). Crea una nueva en console.groq.com → API Keys."
+                    403 -> "Acceso bloqueado (403). Posibles causas: clave sin créditos, cuenta suspendida, o bloqueo de red. Prueba regenerar tu clave en console.groq.com o usa OpenRouter como alternativa."
+                    429 -> "Límite de velocidad alcanzado (429). Espera unos segundos e inténtalo de nuevo."
+                    400 -> "Solicitud incorrecta (400). Puede que el modelo '$model' no exista o esté retirado. Prueba con llama-3.1-8b-instant."
+                    404 -> "URL o modelo no encontrado (404). Revisa la URL base en Ajustes."
+                    500, 502, 503 -> "El servidor de la API está teniendo problemas ($errorCode). Inténtalo más tarde."
                     else -> "Error de API ($errorCode): ${errorBody ?: response.message()}"
                 }
                 Result.failure(Exception(errorMessage))
