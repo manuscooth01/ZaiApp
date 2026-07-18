@@ -1311,6 +1311,7 @@ fun OnboardingScreen(viewModel: ZaiViewModel, onFinish: () -> Unit) {
                                             value = model,
                                             onValueChange = { model = it },
                                             readOnly = true,
+                                            leadingIcon = { ModelBadge(model) },
                                             modifier = Modifier.fillMaxWidth().menuAnchor(),
                                             trailingIcon = {
                                                 Icon(if (showModelDropdown) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, tint = MaterialTheme.colorScheme.primary)
@@ -1326,7 +1327,13 @@ fun OnboardingScreen(viewModel: ZaiViewModel, onFinish: () -> Unit) {
                                         ) {
                                             modelList.forEach { m ->
                                                 DropdownMenuItem(
-                                                    text = { Text(m, color = MaterialTheme.colorScheme.onSurface) },
+                                                    text = {
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            ModelBadge(m, Modifier.size(20.dp))
+                                                            Spacer(Modifier.width(10.dp))
+                                                            Text(m, color = MaterialTheme.colorScheme.onSurface)
+                                                        }
+                                                    },
                                                     onClick = {
                                                         model = m
                                                         viewModel.saveSelectedModel(m)
@@ -3134,6 +3141,41 @@ fun GitHubToolsDialog(onDismiss: () -> Unit) {
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Cerrar", color = MaterialTheme.colorScheme.primary) } }
     )
+}
+
+/**
+ * Distintivo visual por marca para cada modelo: círculo de color con la
+ * inicial de la marca (L=Llama/Meta, G=Google/Gemma, D=DeepSeek, O=OpenAI,
+ * M=Mistral, Q=Qwen, P=Microsoft, ?=otro). Evita depender de assets de logo.
+ */
+private fun modelBrand(id: String): Pair<Color, String> {
+    val s = id.lowercase()
+    return when {
+        "llama" in s -> Color(0xFF0668E1) to "L"                    // Meta
+        "gemma" in s || "gemini" in s -> Color(0xFF4285F4) to "G"  // Google
+        "deepseek" in s -> Color(0xFF4D6BFE) to "D"                // DeepSeek
+        "gpt" in s || "openai" in s -> Color(0xFF10A37F) to "O"    // OpenAI
+        "mistral" in s || "mixtral" in s -> Color(0xFFFF7000) to "M" // Mistral
+        "qwen" in s -> Color(0xFF7400CF) to "Q"                    // Qwen
+        "phi" in s -> Color(0xFF0078D4) to "P"                     // Microsoft
+        else -> Color(0xFF64748B) to "?"
+    }
+}
+
+@Composable
+private fun ModelBadge(modelId: String, modifier: Modifier = Modifier) {
+    val (bg, letter) = remember(modelId) { modelBrand(modelId) }
+    Box(
+        modifier = modifier.size(22.dp).background(bg, CircleShape),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = letter,
+            color = Color.White,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
 }
 
 @Composable
