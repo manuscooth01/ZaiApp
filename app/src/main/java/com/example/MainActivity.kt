@@ -59,6 +59,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
 import coil.compose.AsyncImage
+import com.example.ui.Logos
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.material.icons.filled.ContentPaste
@@ -3162,11 +3163,47 @@ private fun modelBrand(id: String): Pair<Color, String> {
     }
 }
 
+private fun modelLogo(id: String): String? {
+    val s = id.lowercase()
+    return when {
+        "llama" in s -> Logos.MODEL_META
+        "gemma" in s || "gemini" in s -> Logos.MODEL_GOOGLE
+        "deepseek" in s -> Logos.MODEL_DEEPSEEK
+        "gpt" in s || "openai" in s -> Logos.MODEL_OPENAI
+        "mistral" in s || "mixtral" in s -> Logos.MODEL_MISTRAL
+        "qwen" in s -> Logos.MODEL_QWEN
+        "phi" in s -> Logos.MODEL_MICROSOFT
+        else -> null
+    }
+}
+
 @Composable
 private fun ModelBadge(modelId: String, modifier: Modifier = Modifier) {
     val (bg, letter) = remember(modelId) { modelBrand(modelId) }
+    val logoUrl = remember(modelId) { modelLogo(modelId) }
     Box(
-        modifier = modifier.size(22.dp).background(bg, CircleShape),
+        modifier = modifier.size(22.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        if (logoUrl != null) {
+            AsyncImage(
+                model = logoUrl,
+                contentDescription = letter,
+                modifier = Modifier.size(22.dp),
+                contentScale = ContentScale.Fit,
+                placeholder = { LetterBadge(bg, letter) },
+                error = { LetterBadge(bg, letter) }
+            )
+        } else {
+            LetterBadge(bg, letter)
+        }
+    }
+}
+
+@Composable
+private fun LetterBadge(bg: Color, letter: String) {
+    Box(
+        modifier = Modifier.size(22.dp).background(bg, CircleShape),
         contentAlignment = Alignment.Center
     ) {
         Text(
