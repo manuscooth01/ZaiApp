@@ -64,8 +64,6 @@ import android.content.Context
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.foundation.text.selection.EmptyTextToolbar
-import androidx.compose.foundation.text.selection.LocalTextToolbar
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
@@ -1316,21 +1314,19 @@ fun OnboardingScreen(viewModel: ZaiViewModel, onFinish: () -> Unit) {
                                         onExpandedChange = { showModelDropdown = !showModelDropdown },
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        CompositionLocalProvider(LocalTextToolbar provides EmptyTextToolbar) {
-                                            OutlinedTextField(
-                                                value = model,
-                                                onValueChange = { model = it },
-                                                readOnly = true,
-                                                leadingIcon = { ModelBadge(model) },
-                                                modifier = Modifier.fillMaxWidth().menuAnchor(),
-                                                trailingIcon = {
-                                                    Icon(if (showModelDropdown) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, tint = MaterialTheme.colorScheme.primary)
-                                                },
-                                                colors = outlinedFieldColors(),
-                                                shape = RoundedCornerShape(12.dp),
-                                                placeholder = { Text("Selecciona un modelo") }
-                                            )
-                                        }
+                                        OutlinedTextField(
+                                            value = model,
+                                            onValueChange = { model = it },
+                                            readOnly = true,
+                                            leadingIcon = { ModelBadge(model) },
+                                            modifier = Modifier.fillMaxWidth().menuAnchor(),
+                                            trailingIcon = {
+                                                Icon(if (showModelDropdown) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, tint = MaterialTheme.colorScheme.primary)
+                                            },
+                                            colors = outlinedFieldColors(),
+                                            shape = RoundedCornerShape(12.dp),
+                                            placeholder = { Text("Selecciona un modelo") }
+                                        )
                                         ExposedDropdownMenu(
                                             expanded = showModelDropdown,
                                             onDismissRequest = { showModelDropdown = false },
@@ -2556,21 +2552,19 @@ fun SettingsScreen(viewModel: ZaiViewModel, onDismiss: () -> Unit) {
                 onExpandedChange = { showModelMenu = !showModelMenu },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                CompositionLocalProvider(LocalTextToolbar provides EmptyTextToolbar) {
-                    OutlinedTextField(
-                        value = model,
-                        onValueChange = {},
-                        readOnly = true,
-                        leadingIcon = { ModelBadge(model) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor(),
-                        trailingIcon = {
-                            Icon(if (showModelMenu) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, tint = MaterialTheme.colorScheme.primary)
-                        },
-                        colors = outlinedFieldColors(),
-                        shape = RoundedCornerShape(16.dp),
-                        placeholder = { Text("Selecciona un modelo") }
-                    )
-                }
+                OutlinedTextField(
+                    value = model,
+                    onValueChange = {},
+                    readOnly = true,
+                    leadingIcon = { ModelBadge(model) },
+                    modifier = Modifier.fillMaxWidth().menuAnchor(),
+                    trailingIcon = {
+                        Icon(if (showModelMenu) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, tint = MaterialTheme.colorScheme.primary)
+                    },
+                    colors = outlinedFieldColors(),
+                    shape = RoundedCornerShape(16.dp),
+                    placeholder = { Text("Selecciona un modelo") }
+                )
                 if (availableModelsList.isNotEmpty()) {
                     ExposedDropdownMenu(
                         expanded = showModelMenu,
