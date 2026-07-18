@@ -1063,8 +1063,11 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
                     _apiError.value = "No se reconoció la credencial de Google recibida."
                 }
             } catch (e: NoCredentialException) {
-                _apiError.value = "No hay ninguna cuenta de Google disponible en el dispositivo, " +
-                    "o falta registrar la huella SHA-1 de la app en Firebase."
+                // La huella SHA-1 ya se verifica en CI y coincide con google-services.json,
+                // así que lo habitual es que no haya cuenta de Google a nivel sistema.
+                _apiError.value = "Google no encontró credenciales en el dispositivo. " +
+                    "Si ya agregaste la huella SHA-1 en Firebase, añade una cuenta de Google " +
+                    "en Ajustes > Cuentas del dispositivo. Detalle: ${e.message ?: e.type ?: "sin detalle"}"
             } catch (e: GetCredentialException) {
                 _apiError.value = "No se pudo iniciar sesión con Google: ${e.message ?: "cancelado"}"
             } catch (e: GoogleIdTokenParsingException) {
