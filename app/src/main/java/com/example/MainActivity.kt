@@ -59,6 +59,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import com.example.ui.Logos
 import android.content.ClipboardManager
 import android.content.Context
@@ -3186,12 +3187,12 @@ private fun ModelBadge(modelId: String, modifier: Modifier = Modifier) {
         contentAlignment = Alignment.Center
     ) {
         if (logoUrl != null) {
-            AsyncImage(
+            SubcomposeAsyncImage(
                 model = logoUrl,
                 contentDescription = letter,
                 modifier = Modifier.size(22.dp),
                 contentScale = ContentScale.Fit,
-                placeholder = { LetterBadge(bg, letter) },
+                loading = { LetterBadge(bg, letter) },
                 error = { LetterBadge(bg, letter) }
             )
         } else {
