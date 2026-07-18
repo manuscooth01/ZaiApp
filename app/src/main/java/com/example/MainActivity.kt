@@ -59,8 +59,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
 import coil.compose.AsyncImage
-import coil.compose.SubcomposeAsyncImage
-import com.example.ui.Logos
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.material.icons.filled.ContentPaste
@@ -3178,16 +3176,16 @@ private fun modelBrand(id: String): Pair<Color, String> {
     }
 }
 
-private fun modelLogo(id: String): String? {
+private fun modelLogoRes(id: String): Int? {
     val s = id.lowercase()
     return when {
-        "llama" in s -> Logos.MODEL_META
-        "gemma" in s || "gemini" in s -> Logos.MODEL_GOOGLE
-        "deepseek" in s -> Logos.MODEL_DEEPSEEK
-        "gpt" in s || "openai" in s -> Logos.MODEL_OPENAI
-        "mistral" in s || "mixtral" in s -> Logos.MODEL_MISTRAL
-        "qwen" in s -> Logos.MODEL_QWEN
-        "phi" in s -> Logos.MODEL_MICROSOFT
+        "llama" in s -> R.drawable.ic_brand_meta
+        "gemma" in s || "gemini" in s -> R.drawable.ic_brand_google
+        "deepseek" in s -> R.drawable.ic_brand_deepseek
+        "gpt" in s || "openai" in s -> R.drawable.ic_brand_openai
+        "mistral" in s || "mixtral" in s -> R.drawable.ic_brand_mistral
+        "qwen" in s -> R.drawable.ic_brand_qwen
+        "phi" in s -> R.drawable.ic_brand_microsoft
         else -> null
     }
 }
@@ -3195,19 +3193,17 @@ private fun modelLogo(id: String): String? {
 @Composable
 private fun ModelBadge(modelId: String, modifier: Modifier = Modifier) {
     val (bg, letter) = remember(modelId) { modelBrand(modelId) }
-    val logoUrl = remember(modelId) { modelLogo(modelId) }
+    val res = remember(modelId) { modelLogoRes(modelId) }
     Box(
         modifier = modifier.size(22.dp),
         contentAlignment = Alignment.Center
     ) {
-        if (logoUrl != null) {
-            SubcomposeAsyncImage(
-                model = logoUrl,
+        if (res != null) {
+            Image(
+                painter = painterResource(res),
                 contentDescription = letter,
                 modifier = Modifier.size(22.dp),
-                contentScale = ContentScale.Fit,
-                loading = { LetterBadge(bg, letter) },
-                error = { LetterBadge(bg, letter) }
+                contentScale = ContentScale.Fit
             )
         } else {
             LetterBadge(bg, letter)
@@ -3230,14 +3226,14 @@ private fun LetterBadge(bg: Color, letter: String) {
     }
 }
 
-private fun providerLogo(p: String): String? {
+private fun providerLogoRes(p: String): Int? {
     val s = p.lowercase()
     return when {
-        "groq" in s -> Logos.PROVIDER_GROQ
-        "openai" in s -> Logos.PROVIDER_OPENAI
-        "ollama" in s -> Logos.PROVIDER_OLLAMA
-        "openrouter" in s -> Logos.PROVIDER_OPENROUTER
-        "together" in s -> Logos.PROVIDER_TOGETHER
+        "groq" in s -> R.drawable.ic_provider_groq
+        "openai" in s -> R.drawable.ic_brand_openai
+        "ollama" in s -> R.drawable.ic_provider_ollama
+        "openrouter" in s -> R.drawable.ic_provider_openrouter
+        "together" in s -> R.drawable.ic_provider_together
         else -> null
     }
 }
@@ -3246,19 +3242,17 @@ private fun providerLogo(p: String): String? {
 private fun ProviderBadge(provider: String, modifier: Modifier = Modifier) {
     val bg = Color(0xFF64748B)
     val letter = provider.firstOrNull()?.uppercase() ?: "?"
-    val logoUrl = remember(provider) { providerLogo(provider) }
+    val res = remember(provider) { providerLogoRes(provider) }
     Box(
         modifier = modifier.size(22.dp),
         contentAlignment = Alignment.Center
     ) {
-        if (logoUrl != null) {
-            SubcomposeAsyncImage(
-                model = logoUrl,
+        if (res != null) {
+            Image(
+                painter = painterResource(res),
                 contentDescription = provider,
                 modifier = Modifier.size(22.dp),
-                contentScale = ContentScale.Fit,
-                loading = { LetterBadge(bg, letter) },
-                error = { LetterBadge(bg, letter) }
+                contentScale = ContentScale.Fit
             )
         } else {
             LetterBadge(bg, letter)
