@@ -3173,6 +3173,7 @@ private fun modelBrand(id: String): Pair<Color, String> {
         "mistral" in s || "mixtral" in s -> Color(0xFFFF7000) to "M" // Mistral
         "qwen" in s -> Color(0xFF7400CF) to "Q"                    // Qwen
         "phi" in s -> Color(0xFF0078D4) to "P"                     // Microsoft
+        "claude" in s || "anthropic" in s -> Color(0xFFCC785C) to "C" // Anthropic
         else -> Color(0xFF64748B) to "?"
     }
 }
@@ -3187,6 +3188,7 @@ private fun modelLogoRes(id: String): Int? {
         "mistral" in s || "mixtral" in s -> R.drawable.ic_brand_mistral
         "qwen" in s -> R.drawable.ic_brand_qwen
         "phi" in s -> R.drawable.ic_brand_microsoft
+        "claude" in s || "anthropic" in s -> R.drawable.ic_brand_anthropic
         else -> null
     }
 }

@@ -210,9 +210,8 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
 
     val defaultModels = mapOf(
         "Groq" to "llama-3.1-8b-instant",
-        "OpenAI" to "gpt-4o",
         "Ollama" to "llama3",
-        "OpenRouter" to "meta-llama/llama-3.1-8b-instruct",
+        "OpenRouter" to "meta-llama/llama-3.1-8b-instruct:free",
         "Together" to "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"
     )
 
@@ -224,27 +223,25 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
         "llama-3.2-90b-vision-preview"
     )
 
-    val openAiModels = listOf(
-        "gpt-4o",
-        "gpt-4-turbo",
-        "gpt-3.5-turbo"
-    )
+    // Modelos de paga (gpt-4o, gpt-4-turbo, gpt-3.5-turbo) eliminados: la clave del
+    // usuario es gratuita y esos modelos requieren presupuesto. La lista se llena
+    // desde la API ("Actualizar desde API") con lo que devuelva el endpoint gratuito.
+    val openAiModels = emptyList<String>()
 
     val togetherModels = listOf(
         "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
         "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
-        "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
         "mistralai/Mixtral-8x7B-Instruct-v0.1",
         "Qwen/Qwen2.5-72B-Instruct"
     )
 
     val openRouterModels = listOf(
-        "meta-llama/llama-3.1-8b-instruct",
-        "meta-llama/llama-3.1-70b-instruct",
-        "google/gemini-flash-1.5",
-        "google/gemini-pro-1.5",
-        "openai/gpt-4o-mini",
-        "deepseek/deepseek-chat"
+        "meta-llama/llama-3.1-8b-instruct:free",
+        "meta-llama/llama-3.1-70b-instruct:free",
+        "google/gemini-flash-1.5:free",
+        "google/gemma-2-9b-it:free",
+        "deepseek/deepseek-chat:free",
+        "anthropic/claude-3-haiku:free"
     )
 
     val ollamaModels = listOf(
@@ -284,12 +281,19 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
             val result = repository.fetchModels(baseUrl, apiKey, provider)
             withContext(Dispatchers.Main) {
                 if (result.isSuccess) {
-                    val fetchedList = result.getOrThrow()
-                    _availableModels.value = fetchedList
+                    val fetched = result.getOrThrow()
+                    // OpenRouter marca los modelos gratuitos con ":free". Para el resto
+                    // de proveedores se muestra lo que devuelva la clave (endpoint gratuito).
+                    val shownList = if (provider == "OpenRouter") {
+                        fetched.filter { it.contains(":free") }
+                    } else {
+                        fetched
+                    }
+                    _availableModels.value = shownList
                     _modelsLoadError.value = null
                     val currentModel = _selectedModel.value
-                    if (fetchedList.isNotEmpty() && !fetchedList.contains(currentModel)) {
-                        val firstModel = fetchedList.first()
+                    if (shownList.isNotEmpty() && !shownList.contains(currentModel)) {
+                        val firstModel = shownList.first()
                         _selectedModel.value = firstModel
                         saveSelectedModel(firstModel)
                     }
