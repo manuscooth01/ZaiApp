@@ -1021,6 +1021,13 @@ fun OnboardingScreen(viewModel: ZaiViewModel, onFinish: () -> Unit) {
     var isForgotPasswordMode by remember { mutableStateOf(false) }
     val authLoading by viewModel.authLoading.collectAsStateWithLifecycle()
     val authProvider by viewModel.authProvider.collectAsStateWithLifecycle()
+    val currentUserEmail by viewModel.currentUserEmail.collectAsStateWithLifecycle()
+
+    LaunchedEffect(currentUserEmail) {
+        if (step == 0 && currentUserEmail != "usuario@groqapp.local") {
+            step = 1
+        }
+    }
 
     Box(
         Modifier
@@ -1043,26 +1050,6 @@ fun OnboardingScreen(viewModel: ZaiViewModel, onFinish: () -> Unit) {
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Top control: Skip button available on all screens except login (step 0),
-                // so authentication can no longer be bypassed as a guest.
-                if (step != 0) {
-                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-                        TextButton(
-                            onClick = {
-                                viewModel.completeOnboarding()
-                                onFinish()
-                            }
-                        ) {
-                            Text(
-                                text = "Saltar",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-                }
-
                 OnboardingProgressBar(currentStep = step)
 
                 Spacer(Modifier.height(8.dp))
