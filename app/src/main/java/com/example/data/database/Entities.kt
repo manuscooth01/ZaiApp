@@ -12,7 +12,9 @@ data class ChatSession(
     val model: String,
     /** "Chat" o "Agente" — las sesiones se mantienen separadas */
     val sessionType: String = "Chat",
-    val userEmail: String = "usuario@groqapp.local"
+    val userEmail: String = "usuario@groqapp.local",
+    /** ID estable usado como documento en Firestore (users/{uid}/sessions/{cloudId}). */
+    val cloudId: String = ""
 )
 
 @Entity(
@@ -26,7 +28,9 @@ data class ChatMessage(
     val content: String,
     val timestamp: Long = System.currentTimeMillis(),
     /** Newline-separated reasoning / thinking steps (agent) */
-    val thinkingSteps: String? = null
+    val thinkingSteps: String? = null,
+    /** ID estable usado como documento en Firestore (.../messages/{cloudId}). */
+    val cloudId: String = ""
 )
 
 @Entity(tableName = "action_logs")

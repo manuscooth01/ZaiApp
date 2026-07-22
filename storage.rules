@@ -1,0 +1,11 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // La imagen de fondo de cada usuario vive en backgrounds/{uid}.jpg y solo el dueño
+    // (mismo uid de Auth) puede subirla o leerla.
+    match /backgrounds/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}

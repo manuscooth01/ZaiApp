@@ -25,6 +25,12 @@ import com.google.firebase.auth.AuthResult
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.OAuthProvider
+import com.google.firebase.Timestamp
+import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.SetOptions
+import com.google.firebase.storage.FirebaseStorage
 import com.example.data.api.GroqMessage
 import com.example.data.database.AppDatabase
 import com.example.data.database.ChatMessage
@@ -41,6 +47,8 @@ import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
+import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlin.coroutines.resume
@@ -78,6 +86,27 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
         null
     }
 
+    // ─── Sincronización en la nube (Firestore + Storage) ───
+    // Firestore persiste offline por defecto en Android: los writes funcionan sin conexión
+    // y se sincronizan al recuperarla. El documento por usuario es users/{uid}.
+    private val db: FirebaseFirestore = FirebaseFirestore.getInstance()
+    private val storage: FirebaseStorage = FirebaseStorage.getInstance()
+
+    // UID del usuario de Firebase (null si es modo invitado local, sin cuenta real).
+    private val cloudUid: String?
+        get() = FirebaseAuth.getInstance().currentUser?.uid
+
+    // Listener en tiempo real de los cambios de config en la nube (se quita en logout).
+    private var settingsListener: ListenerRegistration? = null
+
+    // Verdadero si la sesión actual es una cuenta real de Firebase (no invitado). Se usa en
+    // logout para saber si limpiar la config local, porque al borrar la cuenta Firebase ya
+    // dejó currentUser en null pero igual debemos limpiar lo local.
+    private var hasCloudAccount = false
+
+    // Evita bucles de realimentación: mientras aplicamos la nube localmente, no re-subimos.
+    private val applyingCloud = AtomicBoolean(false)
+
     init {
         // Migración única: si había una API key vieja en texto plano, se mueve a las prefs cifradas.
         val legacyKey = prefs.getString("api_key", null)
@@ -109,6 +138,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
         tts?.voices?.find { it.name == voiceName }?.let {
             tts?.voice = it
         }
+        syncSettingsToCloud()
     }
 
     init {
@@ -170,6 +200,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
     fun clearChatHistory() {
         viewModelScope.launch(Dispatchers.IO) {
             repository.deleteAllDataForUser(_currentUserEmail.value)
+            cloudUid?.let { deleteCloudAllSessions(it) }
             _chatMessages.value = emptyList()
             _agentMessages.value = emptyList()
         }
@@ -321,6 +352,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
         prefs.edit().putString("provider", p).apply()
         _availableModels.value = getFallbackModels(p)
         _modelsLoadError.value = null
+        syncSettingsToCloud()
     }
 
     private val _apiKey = MutableStateFlow(securePrefs?.getString("api_key", "") ?: prefs.getString("api_key", "") ?: "")
@@ -348,6 +380,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
     fun saveThemeMode(mode: ThemeMode) {
         prefs.edit().putString("theme_mode", mode.name).apply()
         _themeMode.value = mode
+        syncSettingsToCloud()
     }
 
     fun saveApiKey(k: String) {
@@ -357,16 +390,19 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
             prefs.edit().putString("api_key", k).apply()
         }
         _apiKey.value = k
+        syncSettingsToCloud()
     }
 
     fun saveBaseUrl(u: String) {
         prefs.edit().putString("base_url", u).apply()
         _baseUrl.value = u
+        syncSettingsToCloud()
     }
 
     fun saveSelectedModel(m: String) {
         prefs.edit().putString("selected_model", m).apply()
         _selectedModel.value = m
+        syncSettingsToCloud()
     }
 
     fun saveAllSettings(provider: String, baseUrl: String, model: String, key: String) {
@@ -376,6 +412,375 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
         saveApiKey(key)
     }
 
+    // ─── Sincronización en la nube (Firestore + Storage) ─────────────────────
+    // La nube es la fuente de verdad entre dispositivos. Cada setter escribe local Y empuja
+    // a users/{uid} con merge. El modo invitado (sin uid) no toca la nube.
+
+    /**
+     * Empuja la configuración actual a Firestore (users/{uid}), merge para no pisar campos
+     * ajenos. No hace nada si no hay usuario real logueado o si estamos aplicando la nube.
+     */
+    fun syncSettingsToCloud() {
+        val uid = cloudUid ?: return
+        if (applyingCloud.get()) return
+        val data = buildCloudSettingsMap()
+        db.collection("users").document(uid)
+            .set(data as Map<String, Any>, SetOptions.merge())
+            .addOnFailureListener { e ->
+                logAction("Nube", "Error al sincronizar configuración: ${e.message}")
+            }
+    }
+
+    /**
+     * Mapa con toda la configuración a guardar. Tipos primitivos (sin clases modelo) para
+     * no necesitar reglas ProGuard extra y viajar limpio por Firestore.
+     */
+    private fun buildCloudSettingsMap(): Map<String, Any?> {
+        return mapOf(
+            "provider" to _selectedProvider.value,
+            "baseUrl" to _baseUrl.value,
+            "selectedModel" to _selectedModel.value,
+            "apiKey" to _apiKey.value,
+            "themeMode" to _themeMode.value.name,
+            "primaryColor" to _primaryColor.value.toLong(),
+            "backgroundTransparency" to _backgroundTransparency.value.toDouble(),
+            "hasCloudBackground" to _backgroundImageUri.value.isNotBlank(),
+            "creativity" to _creativity.value.toDouble(),
+            "webSearch" to _webSearchEnabled.value,
+            "ttsEnabled" to _ttsEnabled.value,
+            "ttsVoice" to _selectedVoiceName.value,
+            "reasoningEnabled" to _reasoningEnabled.value,
+            "updatedAt" to com.google.firebase.Timestamp.now()
+        )
+    }
+
+    /**
+     * Aplica la configuración leída de la nube a los StateFlow y a las prefs locales.
+     * Se marca applyingCloud para que los setters no re-suban lo que acabamos de bajar.
+     */
+    private fun applyCloudSettings(snap: DocumentSnapshot) {
+        if (!snap.exists()) return
+        applyingCloud.set(true)
+        try {
+            snap.getString("provider")?.let { p ->
+                _selectedProvider.value = p
+                prefs.edit().putString("provider", p).apply()
+                providers[p]?.let { _baseUrl.value = it }
+            }
+            snap.getString("baseUrl")?.let { u ->
+                _baseUrl.value = u
+                prefs.edit().putString("base_url", u).apply()
+            }
+            snap.getString("selectedModel")?.let { m ->
+                _selectedModel.value = m
+                prefs.edit().putString("selected_model", m).apply()
+            }
+            // API key: a las prefs cifradas, no a las de texto plano.
+            snap.getString("apiKey")?.let { k ->
+                if (securePrefs != null) {
+                    securePrefs.edit().putString("api_key", k).apply()
+                } else {
+                    prefs.edit().putString("api_key", k).apply()
+                }
+                _apiKey.value = k
+            }
+            snap.getString("themeMode")?.let { mode ->
+                val tm = when (mode) {
+                    "LIGHT" -> ThemeMode.LIGHT
+                    "SYSTEM" -> ThemeMode.SYSTEM
+                    else -> ThemeMode.DARK
+                }
+                _themeMode.value = tm
+                prefs.edit().putString("theme_mode", tm.name).apply()
+            }
+            (snap.getLong("primaryColor")?.toInt())?.let { c ->
+                _primaryColor.value = c
+                prefs.edit().putInt("primary_color", c).apply()
+            }
+            snap.getDouble("backgroundTransparency")?.let { t ->
+                _backgroundTransparency.value = t.toFloat()
+                prefs.edit().putFloat("background_transparency", t.toFloat()).apply()
+            }
+            snap.getDouble("creativity")?.let { v ->
+                _creativity.value = v.toFloat()
+                prefs.edit().putFloat("creativity", v.toFloat()).apply()
+            }
+            snap.getBoolean("webSearch")?.let { v ->
+                _webSearchEnabled.value = v
+                prefs.edit().putBoolean("web_search", v).apply()
+            }
+            snap.getBoolean("ttsEnabled")?.let { v ->
+                _ttsEnabled.value = v
+                prefs.edit().putBoolean("tts_enabled", v).apply()
+            }
+            snap.getString("ttsVoice")?.let { v ->
+                _selectedVoiceName.value = v
+                prefs.edit().putString("tts_voice_name", v).apply()
+            }
+            snap.getBoolean("reasoningEnabled")?.let { v ->
+                _reasoningEnabled.value = v
+                prefs.edit().putBoolean("reasoning_enabled", v).apply()
+            }
+            // Fondo: si la nube tiene imagen, la bajamos de Storage a filesDir.
+            val hasCloudBg = snap.getBoolean("hasCloudBackground") ?: false
+            if (hasCloudBg) {
+                downloadCloudBackground()
+            }
+        } finally {
+            applyingCloud.set(false)
+        }
+    }
+
+    /**
+     * Descarga la imagen de fondo de Storage (backgrounds/{uid}.jpg) al almacenamiento interno
+     * y la deja lista para Coil. Si falla (sin conexión, etc.) se queda con el fondo local actual.
+     */
+    private fun downloadCloudBackground() {
+        val uid = cloudUid ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val file = File(getApplication<Application>().filesDir, "background_image_cloud.jpg")
+                storage.reference.child("backgrounds/$uid.jpg")
+                    .getFile(file)
+                    .addOnSuccessListener {
+                        val path = file.absolutePath
+                        _backgroundImageUri.value = path
+                        prefs.edit().putString("background_uri", path).apply()
+                    }
+                    .addOnFailureListener { e ->
+                        logAction("Nube", "No se pudo descargar el fondo: ${e.message}")
+                    }
+            } catch (e: Exception) {
+                // Sin conexión o permiso: se mantiene el fondo local.
+            }
+        }
+    }
+
+    /**
+     * Sube la imagen de fondo local a Storage y marca hasCloudBackground=true en Firestore.
+     */
+    private fun uploadCloudBackground(localPath: String) {
+        val uid = cloudUid ?: return
+        val file = File(localPath)
+        if (!file.exists()) return
+        storage.reference.child("backgrounds/$uid.jpg")
+            .putFile(android.net.Uri.fromFile(file))
+            .addOnSuccessListener {
+                db.collection("users").document(uid)
+                    .update("hasCloudBackground", true)
+                    .addOnFailureListener { e ->
+                        logAction("Nube", "Error al marcar fondo en la nube: ${e.message}")
+                    }
+            }
+            .addOnFailureListener { e ->
+                logAction("Nube", "Error al subir el fondo: ${e.message}")
+            }
+    }
+
+    /**
+     * Borra el fondo de la nube (Storage + flag) cuando el usuario lo quita localmente.
+     */
+    private fun deleteCloudBackground() {
+        val uid = cloudUid ?: return
+        storage.reference.child("backgrounds/$uid.jpg").delete()
+            .addOnFailureListener { /* ya no existía: ok */ }
+        db.collection("users").document(uid).update("hasCloudBackground", false)
+    }
+
+    /**
+     * En el primer login (la nube aún no tiene doc para este uid) sube la config local actual,
+     * para no perder lo que el usuario ya había configurado en el dispositivo.
+     */
+    private fun uploadLocalSettingsToCloud() {
+        val uid = cloudUid ?: return
+        val data = buildCloudSettingsMap()
+        db.collection("users").document(uid)
+            .set(data as Map<String, Any>, SetOptions.merge())
+            .addOnFailureListener { e ->
+                logAction("Nube", "Error al subir config inicial: ${e.message}")
+            }
+    }
+
+    /**
+     * Al iniciar sesión: trae la config de la nube y la aplica (la nube manda). Si no existe
+     * todavía, sube la local. Luego escucha cambios en vivo desde otros dispositivos.
+     */
+    private fun startCloudSync() {
+        val uid = cloudUid ?: return
+        hasCloudAccount = true
+        val docRef = db.collection("users").document(uid)
+        docRef.get().addOnSuccessListener { snap ->
+            if (snap.exists()) {
+                applyCloudSettings(snap)
+            } else {
+                uploadLocalSettingsToCloud()
+            }
+        }.addOnFailureListener { e ->
+            logAction("Nube", "No se pudo leer la config de la nube: ${e.message}")
+        }
+        settingsListener = docRef.addSnapshotListener { snap, error ->
+            if (error != null) return@addSnapshotListener
+            if (snap != null && snap.exists()) {
+                applyCloudSettings(snap)
+            }
+        }
+        // Restaurar el historial de chat desde la nube (si falta localmente).
+        pullChatFromCloud()
+    }
+
+    /** Quita el listener de la nube (en logout). */
+    private fun stopCloudSync() {
+        settingsListener?.remove()
+        settingsListener = null
+    }
+
+    // ─── Sincronización del historial de chat (Firestore) ─────────────────────
+    // Espejo: Room es la caché local; Firestore (users/{uid}/sessions/...) la réplica por
+    // cuenta. Cada fila local tiene un cloudId (UUID) que es el ID del documento en la nube.
+
+    /** Espera un Task de Firestore sin bloquear con callbacks. */
+    private suspend fun <T> com.google.android.gms.tasks.Task<T>.await(): T =
+        suspendCancellableCoroutine { cont ->
+            addOnSuccessListener { cont.resume(it) }
+            addOnFailureListener { cont.resumeWithException(it) }
+        }
+
+    /** Empuja una sesión a users/{uid}/sessions/{cloudId}. */
+    private fun syncSessionToCloud(cloudId: String, title: String, model: String, sessionType: String) {
+        val uid = cloudUid ?: return
+        val data = mapOf(
+            "title" to title,
+            "model" to model,
+            "sessionType" to sessionType,
+            "createdAt" to System.currentTimeMillis(),
+            "updatedAt" to System.currentTimeMillis()
+        )
+        db.collection("users").document(uid).collection("sessions").document(cloudId)
+            .set(data as Map<String, Any>, SetOptions.merge())
+            .addOnFailureListener { e -> logAction("Nube", "Error al subir sesión: ${e.message}") }
+    }
+
+    /** Empuja un mensaje a users/{uid}/sessions/{sessionCloudId}/messages/{message.cloudId}. */
+    private fun syncMessageToCloud(sessionCloudId: String, message: ChatMessage) {
+        val uid = cloudUid ?: return
+        if (message.cloudId.isBlank()) return
+        val data = mapOf(
+            "role" to message.role,
+            "content" to message.content,
+            "thinkingSteps" to message.thinkingSteps,
+            "createdAt" to message.timestamp
+        )
+        db.collection("users").document(uid).collection("sessions").document(sessionCloudId)
+            .collection("messages").document(message.cloudId)
+            .set(data as Map<String, Any>, SetOptions.merge())
+            .addOnFailureListener { e -> logAction("Nube", "Error al subir mensaje: ${e.message}") }
+    }
+
+    /** Borra una sesión y su subcolección de mensajes en la nube. */
+    private fun deleteCloudSession(cloudId: String) {
+        val uid = cloudUid ?: return
+        db.recursiveDelete(
+            db.collection("users").document(uid).collection("sessions").document(cloudId)
+        ).addOnFailureListener { e -> logAction("Nube", "Error al borrar sesión de la nube: ${e.message}") }
+    }
+
+    /** Borra todo el historial (subcolección sessions) de la nube para el uid. */
+    private fun deleteCloudAllSessions(uid: String) {
+        db.recursiveDelete(
+            db.collection("users").document(uid).collection("sessions")
+        ).addOnFailureListener { e -> logAction("Nube", "Error al borrar historial de la nube: ${e.message}") }
+    }
+
+    /**
+     * Asegura que la sesión local tenga un cloudId (por si se creó antes de este feature) y lo
+     * devuelve. Si hace falta, genera el UUID, lo guarda localmente y sube la sesión a la nube.
+     */
+    private fun ensureSessionCloudId(localId: Long, fallbackTitle: String, type: String): String {
+        val existing = if (type == "Chat") chatSessionCloudId else agentSessionCloudId
+        if (!existing.isNullOrBlank()) return existing
+        val cid = UUID.randomUUID().toString()
+        if (type == "Chat") chatSessionCloudId = cid else agentSessionCloudId = cid
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.updateSessionCloudId(localId, cid)
+            val title = repository.getSessionById(localId)?.title ?: fallbackTitle
+            syncSessionToCloud(cid, title, _selectedModel.value, type)
+        }
+        return cid
+    }
+
+    /**
+     * Asigna cloudId a las sesiones/mensajes locales preexistentes (sin cloudId) y los sube.
+     * Evita duplicados al re-entrar en el mismo dispositivo tras la actualización.
+     */
+    private suspend fun migrateLocalChatToCloud(uid: String) {
+        val sessions = repository.getSessionsByUserSync(_currentUserEmail.value)
+        for (session in sessions) {
+            if (session.cloudId.isNotBlank()) continue
+            val sessionCloudId = UUID.randomUUID().toString()
+            repository.updateSessionCloudId(session.id, sessionCloudId)
+            syncSessionToCloud(sessionCloudId, session.title, session.model, session.sessionType)
+            val messages = repository.getMessagesForSessionSync(session.id)
+            for (m in messages) {
+                if (m.cloudId.isNotBlank()) continue
+                val mCloudId = UUID.randomUUID().toString()
+                repository.updateMessageCloudId(m.id, mCloudId)
+                syncMessageToCloud(
+                    sessionCloudId,
+                    ChatMessage(
+                        sessionId = session.id,
+                        role = m.role,
+                        content = m.content,
+                        thinkingSteps = m.thinkingSteps,
+                        cloudId = mCloudId
+                    )
+                )
+            }
+        }
+    }
+
+    /**
+     * Baja el historial de la nube e inserta en Room lo que falte localmente, etiquetado con el
+     * email actual (para que las queries por email sigan funcionando). No duplica lo ya existente.
+     */
+    private fun pullChatFromCloud() {
+        val uid = cloudUid ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                migrateLocalChatToCloud(uid)
+                val sessionsSnap = db.collection("users").document(uid).collection("sessions").get().await()
+                for (sessionDoc in sessionsSnap.documents) {
+                    val sessionCloudId = sessionDoc.id
+                    val title = sessionDoc.getString("title") ?: ""
+                    val model = sessionDoc.getString("model") ?: ""
+                    val sessionType = sessionDoc.getString("sessionType") ?: "Chat"
+                    val updatedAt = sessionDoc.getLong("updatedAt") ?: 0L
+                    val localSession = repository.getSessionByCloudId(sessionCloudId)
+                    val localId = if (localSession == null) {
+                        repository.createSession(title, model, sessionType, _currentUserEmail.value, cloudId = sessionCloudId)
+                    } else {
+                        if (updatedAt > localSession.timestamp) {
+                            repository.updateSessionTitle(localSession.id, title)
+                        }
+                        localSession.id
+                    }
+                    val msgsSnap = db.collection("users").document(uid)
+                        .collection("sessions").document(sessionCloudId).collection("messages").get().await()
+                    for (msgDoc in msgsSnap.documents) {
+                        val msgCloudId = msgDoc.id
+                        if (repository.getMessageByCloudId(msgCloudId) != null) continue
+                        val role = msgDoc.getString("role") ?: "user"
+                        val content = msgDoc.getString("content") ?: ""
+                        val thinking = msgDoc.getString("thinkingSteps")
+                        repository.saveMessage(localId, role, content, thinking, cloudId = msgCloudId)
+                    }
+                }
+            } catch (e: Exception) {
+                logAction("Nube", "Error al bajar el historial: ${e.message}")
+            }
+        }
+    }
+
+
     // ─── Extras: creatividad, web search, TTS ──────────────
     private val _creativity = MutableStateFlow(prefs.getFloat("creativity", 0.7f))
     val creativity: StateFlow<Float> = _creativity.asStateFlow()
@@ -383,6 +788,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
         val clamped = v.coerceIn(0f, 2f)
         _creativity.value = clamped
         prefs.edit().putFloat("creativity", clamped).apply()
+        syncSettingsToCloud()
     }
 
     private val _webSearchEnabled = MutableStateFlow(prefs.getBoolean("web_search", false))
@@ -390,6 +796,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
     fun setWebSearchEnabled(v: Boolean) {
         _webSearchEnabled.value = v
         prefs.edit().putBoolean("web_search", v).apply()
+        syncSettingsToCloud()
     }
 
     private val _ttsEnabled = MutableStateFlow(prefs.getBoolean("tts_enabled", false))
@@ -397,6 +804,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
     fun setTtsEnabled(v: Boolean) {
         _ttsEnabled.value = v
         prefs.edit().putBoolean("tts_enabled", v).apply()
+        syncSettingsToCloud()
     }
 
     // ─── Personalización ──────────────────────────────
@@ -405,6 +813,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
     fun setPrimaryColor(color: Int) {
         _primaryColor.value = color
         prefs.edit().putInt("primary_color", color).apply()
+        syncSettingsToCloud()
     }
 
     private val _backgroundImageUri = MutableStateFlow(prefs.getString("background_uri", "") ?: "")
@@ -412,6 +821,13 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
     fun setBackgroundImageUri(uri: String) {
         _backgroundImageUri.value = uri
         prefs.edit().putString("background_uri", uri).apply()
+        if (uri.isBlank()) {
+            // El usuario quitó el fondo: borrarlo también de la nube.
+            deleteCloudBackground()
+        } else if (File(uri).exists()) {
+            uploadCloudBackground(uri)
+        }
+        syncSettingsToCloud()
     }
 
     // Copia la imagen elegida al almacenamiento interno de la app y guarda esa ruta.
@@ -434,6 +850,9 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
                 val path = file.absolutePath
                 _backgroundImageUri.value = path
                 prefs.edit().putString("background_uri", path).apply()
+                // Subir la imagen a la nube y marcar el flag en Firestore.
+                uploadCloudBackground(path)
+                syncSettingsToCloud()
             } catch (e: Exception) {
                 // Si falla la copia, no cambiamos el fondo (se mantiene el anterior).
             }
@@ -445,6 +864,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
     fun setBackgroundTransparency(transparency: Float) {
         _backgroundTransparency.value = transparency
         prefs.edit().putFloat("background_transparency", transparency).apply()
+        syncSettingsToCloud()
     }
 
     // ─── UI flags ───────────────────────────────────────
@@ -468,6 +888,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
     fun setReasoningEnabled(v: Boolean) {
         _reasoningEnabled.value = v
         prefs.edit().putBoolean("reasoning_enabled", v).apply()
+        syncSettingsToCloud()
     }
 
     // ─── Sesiones separadas ─────────────────────────────
@@ -478,6 +899,11 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
 
     private var chatSessionId: Long? = null
     private var agentSessionId: Long? = null
+
+    // cloudId (UUID) de la sesión activa, para empujar los mensajes al doc correcto en
+    // Firestore (users/{uid}/sessions/{cloudId}). Se carga al seleccionar una sesión.
+    private var chatSessionCloudId: String? = null
+    private var agentSessionCloudId: String? = null
 
     private val _currentChatSessionId = MutableStateFlow<Long?>(null)
     val currentChatSessionId: StateFlow<Long?> = _currentChatSessionId.asStateFlow()
@@ -623,17 +1049,30 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
                 }
 
                 _loadingMessage.value = "Guardando mensaje..."
-                val id = chatSessionId ?: repository.createSession(
-                    title = displayText.take(40).ifBlank { "Nuevo chat" },
-                    model = _selectedModel.value,
-                    sessionType = "Chat",
-                    userEmail = _currentUserEmail.value
-                ).also {
-                    chatSessionId = it
-                    _currentChatSessionId.value = it
+                val sessionTitle = displayText.take(40).ifBlank { "Nuevo chat" }
+                val id = chatSessionId ?: run {
+                    val cloudId = UUID.randomUUID().toString()
+                    val newId = repository.createSession(
+                        title = sessionTitle,
+                        model = _selectedModel.value,
+                        sessionType = "Chat",
+                        userEmail = _currentUserEmail.value,
+                        cloudId = cloudId
+                    )
+                    chatSessionId = newId
+                    chatSessionCloudId = cloudId
+                    _currentChatSessionId.value = newId
+                    syncSessionToCloud(cloudId, sessionTitle, _selectedModel.value, "Chat")
+                    newId
                 }
 
-                repository.saveMessage(id, "user", displayText)
+                val sessionCloudId = ensureSessionCloudId(id, sessionTitle, "Chat")
+                val userCloudId = UUID.randomUUID().toString()
+                repository.saveMessage(id, "user", displayText, cloudId = userCloudId)
+                syncMessageToCloud(
+                    sessionCloudId,
+                    ChatMessage(sessionId = id, role = "user", content = displayText, cloudId = userCloudId)
+                )
                 logAction("Chat", actionDesc)
 
                 val history = repository.getMessagesForSessionSync(id)
@@ -663,8 +1102,14 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
                     _loadingMessage.value = "Procesando respuesta..."
                     val rawContent = result.getOrThrow()
                     val (thinking, finalContent) = parseThinkingAndContent(rawContent)
-                    
-                    repository.saveMessage(id, "assistant", finalContent, thinkingSteps = thinking)
+
+                    val sessionCloudId = ensureSessionCloudId(id, "Chat", "Chat")
+                    val assistantCloudId = UUID.randomUUID().toString()
+                    repository.saveMessage(id, "assistant", finalContent, thinkingSteps = thinking, cloudId = assistantCloudId)
+                    syncMessageToCloud(
+                        sessionCloudId,
+                        ChatMessage(sessionId = id, role = "assistant", content = finalContent, thinkingSteps = thinking, cloudId = assistantCloudId)
+                    )
                     speak(finalContent)
                 } else {
                     val errMsg = result.exceptionOrNull()?.message ?: "Error desconocido"
@@ -710,17 +1155,30 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
                     logAction("Búsqueda Web", "Agente solicitando información para: ${displayText.take(50)}")
                 }
 
-                val id = agentSessionId ?: repository.createSession(
-                    title = displayText.take(40).ifBlank { "Nuevo agente" },
-                    model = _selectedModel.value,
-                    sessionType = "Agente",
-                    userEmail = _currentUserEmail.value
-                ).also {
-                    agentSessionId = it
-                    _currentAgentSessionId.value = it
+                val sessionTitle = displayText.take(40).ifBlank { "Nuevo agente" }
+                val id = agentSessionId ?: run {
+                    val cloudId = UUID.randomUUID().toString()
+                    val newId = repository.createSession(
+                        title = sessionTitle,
+                        model = _selectedModel.value,
+                        sessionType = "Agente",
+                        userEmail = _currentUserEmail.value,
+                        cloudId = cloudId
+                    )
+                    agentSessionId = newId
+                    agentSessionCloudId = cloudId
+                    _currentAgentSessionId.value = newId
+                    syncSessionToCloud(cloudId, sessionTitle, _selectedModel.value, "Agente")
+                    newId
                 }
 
-                repository.saveMessage(id, "user", displayText)
+                val sessionCloudId = ensureSessionCloudId(id, sessionTitle, "Agente")
+                val userCloudId = UUID.randomUUID().toString()
+                repository.saveMessage(id, "user", displayText, cloudId = userCloudId)
+                syncMessageToCloud(
+                    sessionCloudId,
+                    ChatMessage(sessionId = id, role = "user", content = displayText, cloudId = userCloudId)
+                )
                 logAction("Agente", actionDesc)
 
                 if (_reasoningEnabled.value) {
@@ -779,11 +1237,24 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
                     extractAndSaveFiles(finalContent)
                     
                     val stepsJoined = thinking ?: _thinkingSteps.value.joinToString("\n")
+                    val sessionCloudId = ensureSessionCloudId(id, "Agente", "Agente")
+                    val assistantCloudId = UUID.randomUUID().toString()
                     repository.saveMessage(
                         id,
                         "assistant",
                         finalContent,
-                        thinkingSteps = stepsJoined.ifBlank { null }
+                        thinkingSteps = stepsJoined.ifBlank { null },
+                        cloudId = assistantCloudId
+                    )
+                    syncMessageToCloud(
+                        sessionCloudId,
+                        ChatMessage(
+                            sessionId = id,
+                            role = "assistant",
+                            content = finalContent,
+                            thinkingSteps = stepsJoined.ifBlank { null },
+                            cloudId = assistantCloudId
+                        )
                     )
                     speak(finalContent)
                     
@@ -864,19 +1335,23 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
     fun startNewSession(type: String) {
         viewModelScope.launch {
             val title = if (type == "Chat") "Nuevo Chat" else "Nuevo Agente"
-            val id = repository.createSession(title, _selectedModel.value, type, _currentUserEmail.value)
+            val cloudId = UUID.randomUUID().toString()
+            val id = repository.createSession(title, _selectedModel.value, type, _currentUserEmail.value, cloudId = cloudId)
             if (type == "Chat") {
                 chatSessionId = id
+                chatSessionCloudId = cloudId
                 _currentChatSessionId.value = id
                 _chatMessages.value = emptyList()
                 _currentTab.value = "Chat"
             } else {
                 agentSessionId = id
+                agentSessionCloudId = cloudId
                 _currentAgentSessionId.value = id
                 _agentMessages.value = emptyList()
                 _thinkingSteps.value = emptyList()
                 _currentTab.value = "Agente"
             }
+            syncSessionToCloud(cloudId, title, _selectedModel.value, type)
             clearPendingFiles()
             loadSandboxFiles()
             closeHistoryMenu()
@@ -892,6 +1367,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
             _currentTab.value = "Chat"
             loadSandboxFiles()
             closeHistoryMenu()
+            chatSessionCloudId = repository.getSessionById(id)?.cloudId
             logAction("Sesión", "Sesión de chat cargada (ID: $id)")
         }
     }
@@ -904,21 +1380,26 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
             _currentTab.value = "Agente"
             loadSandboxFiles()
             closeHistoryMenu()
+            agentSessionCloudId = repository.getSessionById(id)?.cloudId
             logAction("Sesión", "Sesión de agente cargada (ID: $id)")
         }
     }
 
     fun deleteSession(sessionId: Long) {
         viewModelScope.launch {
+            val cloudId = repository.getSessionById(sessionId)?.cloudId
             repository.deleteSession(sessionId)
+            cloudId?.let { deleteCloudSession(it) }
             logAction("Sesión", "Sesión eliminada (ID: $sessionId)")
             if (chatSessionId == sessionId) {
                 chatSessionId = null
+                chatSessionCloudId = null
                 _currentChatSessionId.value = null
                 _chatMessages.value = emptyList()
             }
             if (agentSessionId == sessionId) {
                 agentSessionId = null
+                agentSessionCloudId = null
                 _currentAgentSessionId.value = null
                 _agentMessages.value = emptyList()
             }
@@ -929,6 +1410,13 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
     fun renameSession(sessionId: Long, newTitle: String) {
         viewModelScope.launch {
             repository.updateSessionTitle(sessionId, newTitle)
+            repository.getSessionById(sessionId)?.cloudId?.let { cid ->
+                cloudUid?.let { uid ->
+                    db.collection("users").document(uid).collection("sessions").document(cid)
+                        .update("title", newTitle)
+                        .addOnFailureListener { e -> logAction("Nube", "Error al renombrar en la nube: ${e.message}") }
+                }
+            }
             logAction("Sesión", "Sesión renombrada a '$newTitle' (ID: $sessionId)")
         }
     }
@@ -936,6 +1424,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
     fun clearCurrentChat() {
         viewModelScope.launch {
             chatSessionId = null
+            chatSessionCloudId = null
             _currentChatSessionId.value = null
             _chatMessages.value = emptyList()
             loadSandboxFiles()
@@ -945,6 +1434,7 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
     fun clearCurrentAgent() {
         viewModelScope.launch {
             agentSessionId = null
+            agentSessionCloudId = null
             _currentAgentSessionId.value = null
             _agentMessages.value = emptyList()
             _thinkingSteps.value = emptyList()
@@ -997,9 +1487,14 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
         _currentUserEmail.value = email
         prefs.edit().putString("current_user_email", email).apply()
         completeOnboarding()
-        
+
+        // Traer/restaurar la config de la nube para esta cuenta (la nube manda).
+        startCloudSync()
+
         chatSessionId = null
         agentSessionId = null
+        chatSessionCloudId = null
+        agentSessionCloudId = null
         _currentChatSessionId.value = null
         _currentAgentSessionId.value = null
         _chatMessages.value = emptyList()
@@ -1204,16 +1699,66 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
 
     fun logout() {
         logAction("Seguridad", "Cierre de sesión del usuario.")
+
+        // ¿Había una cuenta real de Firebase? (el modo invitado no tiene uid). Usamos la
+        // bandera en vez de currentUser porque al borrar la cuenta este ya es null.
+        val hadRealUser = hasCloudAccount
+
+        // Quitar el listener de la nube.
+        stopCloudSync()
+
+        if (hadRealUser) {
+            // La config ya vive en la nube: limpiamos la local para no filtrarla a la
+            // siguiente cuenta que inicie sesión en este dispositivo (antes la API key y
+            // el fondo quedaban accesibles para cualquiera).
+            securePrefs?.edit()?.remove("api_key")?.apply()
+            prefs.edit().apply {
+                remove("provider")
+                remove("base_url")
+                remove("selected_model")
+                remove("api_key")
+                remove("theme_mode")
+                remove("primary_color")
+                remove("background_uri")
+                remove("background_transparency")
+                remove("creativity")
+                remove("web_search")
+                remove("tts_enabled")
+                remove("tts_voice_name")
+                remove("reasoning_enabled")
+            }.apply()
+            // Borrar el archivo de fondo local para que no persista entre cuentas.
+            getApplication<Application>().filesDir
+                .listFiles { f -> f.name.startsWith("background_image") }
+                ?.forEach { it.delete() }
+            // Dejar los StateFlow en sus valores por defecto hasta el próximo login.
+            _selectedProvider.value = "Groq"
+            _baseUrl.value = providers["Groq"]!!
+            _selectedModel.value = "llama-3.1-8b-instant"
+            _apiKey.value = ""
+            _themeMode.value = ThemeMode.DARK
+            _primaryColor.value = 0xFFFF5722.toInt()
+            _backgroundImageUri.value = ""
+            _backgroundTransparency.value = 0.5f
+            _creativity.value = 0.7f
+            _webSearchEnabled.value = false
+            _ttsEnabled.value = false
+            _selectedVoiceName.value = null
+            _reasoningEnabled.value = true
+        }
+
         FirebaseAuth.getInstance().signOut()
         prefs.edit().remove("current_user_email").apply()
         _currentUserEmail.value = "usuario@groqapp.local"
-        
-        // No borramos la API Key para no perder la config en tests
+
         _onboardingCompleted.value = false
         prefs.edit().putBoolean("onboarding_done", false).apply()
-        
+        hasCloudAccount = false
+
         chatSessionId = null
         agentSessionId = null
+        chatSessionCloudId = null
+        agentSessionCloudId = null
         _currentChatSessionId.value = null
         _currentAgentSessionId.value = null
         _chatMessages.value = emptyList()
@@ -1255,6 +1800,11 @@ class ZaiViewModel(application: Application) : AndroidViewModel(application), Te
                     withContext(Dispatchers.IO) {
                         repository.deleteAllDataForUser(email)
                     }
+                    // Borrar también toda la nube del usuario (config + historial) y su fondo.
+                    db.recursiveDelete(db.collection("users").document(user.uid))
+                        .addOnFailureListener { e -> logAction("Nube", "Error al borrar datos de la nube: ${e.message}") }
+                    storage.reference.child("backgrounds/${user.uid}.jpg").delete()
+                        .addOnFailureListener { /* ya no existía: ok */ }
                     logAction("Seguridad", "Cuenta eliminada: $email")
                     logout()
                     _apiError.value = "Tu cuenta y tus datos fueron eliminados."

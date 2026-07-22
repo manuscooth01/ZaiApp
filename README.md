@@ -57,3 +57,37 @@ app/src/main/java/com/example/
 ## Licencia
 
 Proyecto de demostración.
+
+## Sincronización en la nube
+
+La configuración del usuario (API key, fondo de pantalla, tema/color y proveedor/modelo,
+además de creatividad, búsqueda web, TTS y razonamiento) se sincroniza por cuenta en
+**Firestore** (`users/{uid}`, donde `uid` es el de Firebase Auth) y la imagen de fondo en
+**Firebase Storage** (`backgrounds/{uid}.jpg`).
+
+- Al iniciar sesión se restaura la config desde la nube (la nube manda) o se sube la local
+  la primera vez.
+- Cada cambio de ajuste se empuja a la nube (merge) y hay un listener en tiempo real.
+- Al cerrar sesión se limpia la config local (ya vive en la nube), evitando que la siguiente
+  cuenta herede la API key o el fondo.
+- **Historial de chat**: sesiones y mensajes se espejan en Firestore
+  (`users/{uid}/sessions/{cloudId}` y `.../messages/{msgCloudId}`), con un `cloudId` (UUID)
+  por fila que mapea 1:1 local↔nube. Se restauran al iniciar sesión y se suben al escribir.
+- El modo invitado (sin cuenta) es 100% local y no toca la nube.
+
+**Migración de base de datos**: el esquema de Room subió a la versión 6 (migración `5→6`, no
+destructiva) para añadir la columna `cloudId` a `chat_sessions` y `chat_messages`. Al actualizar
+desde una versión anterior el historial local se conserva y se sube a la nube con nuevos `cloudId`.
+
+**Requisitos y despliegue (no afectan la compilación del APK):**
+
+1. En Firebase Console: habilitar **Firestore Database** y **Storage** para el proyecto
+   (`applicationId = com.aistudio.groqapp`).
+2. Desplegar las reglas de seguridad para que solo el dueño acceda a su documento/fondo:
+   - `firestore.rules` → `firebase deploy --only firestore:rules`
+   - `storage.rules` → `firebase deploy --only storage`
+3. Las reglas ya están en la raíz del repo. Sin ellas, cualquiera podría leer/escribir la
+   config de otros usuarios.
+
+> Nota de seguridad: la API key se guarda en la nube en texto (protegida por las reglas de
+> Auth y el cifrado en reposo de Firebase). No se cifra en el cliente.

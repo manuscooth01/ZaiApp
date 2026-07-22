@@ -77,9 +77,21 @@ class AppRepository(private val chatDao: ChatDao) {
     suspend fun getMessagesForSessionSync(sessionId: Long): List<ChatMessage> =
         chatDao.getMessagesForSessionSync(sessionId)
 
-    suspend fun createSession(title: String, model: String, sessionType: String, userEmail: String): Long {
+    suspend fun createSession(
+        title: String,
+        model: String,
+        sessionType: String,
+        userEmail: String,
+        cloudId: String = ""
+    ): Long {
         return chatDao.insertSession(
-            ChatSession(title = title, model = model, sessionType = sessionType, userEmail = userEmail)
+            ChatSession(
+                title = title,
+                model = model,
+                sessionType = sessionType,
+                userEmail = userEmail,
+                cloudId = cloudId
+            )
         )
     }
 
@@ -87,7 +99,8 @@ class AppRepository(private val chatDao: ChatDao) {
         sessionId: Long,
         role: String,
         content: String,
-        thinkingSteps: String? = null
+        thinkingSteps: String? = null,
+        cloudId: String = ""
     ): Long {
         chatDao.touchSession(sessionId)
         return chatDao.insertMessage(
@@ -95,7 +108,8 @@ class AppRepository(private val chatDao: ChatDao) {
                 sessionId = sessionId,
                 role = role,
                 content = content,
-                thinkingSteps = thinkingSteps
+                thinkingSteps = thinkingSteps,
+                cloudId = cloudId
             )
         )
     }
@@ -113,6 +127,22 @@ class AppRepository(private val chatDao: ChatDao) {
     suspend fun updateSessionTitle(sessionId: Long, newTitle: String) {
         chatDao.updateSessionTitle(sessionId, newTitle)
     }
+
+    // ─── Sync con la nube (Firestore) ─────────────────────
+    suspend fun getSessionsByUserSync(userEmail: String): List<ChatSession> =
+        chatDao.getSessionsByUserSync(userEmail)
+
+    suspend fun getSessionByCloudId(cloudId: String): ChatSession? =
+        chatDao.getSessionByCloudId(cloudId)
+
+    suspend fun getMessageByCloudId(cloudId: String): ChatMessage? =
+        chatDao.getMessageByCloudId(cloudId)
+
+    suspend fun updateSessionCloudId(id: Long, cloudId: String) =
+        chatDao.updateSessionCloudId(id, cloudId)
+
+    suspend fun updateMessageCloudId(id: Long, cloudId: String) =
+        chatDao.updateMessageCloudId(id, cloudId)
 
     suspend fun getChatCompletion(
         baseUrl: String,

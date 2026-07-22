@@ -20,6 +20,22 @@ interface ChatDao {
     @Query("SELECT * FROM chat_messages WHERE sessionId = :sessionId ORDER BY timestamp ASC")
     suspend fun getMessagesForSessionSync(sessionId: Long): List<ChatMessage>
 
+    // ─── Sync con la nube (Firestore) ─────────────────────
+    @Query("SELECT * FROM chat_sessions WHERE userEmail = :userEmail")
+    suspend fun getSessionsByUserSync(userEmail: String): List<ChatSession>
+
+    @Query("SELECT * FROM chat_sessions WHERE cloudId = :cloudId LIMIT 1")
+    suspend fun getSessionByCloudId(cloudId: String): ChatSession?
+
+    @Query("SELECT * FROM chat_messages WHERE cloudId = :cloudId LIMIT 1")
+    suspend fun getMessageByCloudId(cloudId: String): ChatMessage?
+
+    @Query("UPDATE chat_sessions SET cloudId = :cloudId WHERE id = :id")
+    suspend fun updateSessionCloudId(id: Long, cloudId: String)
+
+    @Query("UPDATE chat_messages SET cloudId = :cloudId WHERE id = :id")
+    suspend fun updateMessageCloudId(id: Long, cloudId: String)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSession(session: ChatSession): Long
 

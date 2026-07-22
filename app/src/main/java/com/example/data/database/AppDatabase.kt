@@ -19,9 +19,18 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
     }
 }
 
+// Añade cloudId a sesiones y mensajes para mapear 1:1 con Firestore (users/{uid}/sessions/{cloudId}).
+// No destructiva: ALTER ADD COLUMN con default vacío, preserva el historial existente.
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE chat_sessions ADD COLUMN cloudId TEXT NOT NULL DEFAULT ''")
+        database.execSQL("ALTER TABLE chat_messages ADD COLUMN cloudId TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 @Database(
     entities = [ChatSession::class, ChatMessage::class, ActionLog::class],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -38,7 +47,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "groq_chat_database"
                 )
-                    .addMigrations(MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .build()
                 INSTANCE = instance
                 instance

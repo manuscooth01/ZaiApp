@@ -20,6 +20,8 @@ Actualizado: revisión de autenticación real (Google, GitHub, Email) + segurida
 | Seguridad | Logging HTTP detallado solo en debug, `NONE` en release | `AppRepository.kt` |
 | Rendimiento | Índice en `sessionId` de `chat_messages` + migración `4→5` | `Entities.kt`, `AppDatabase.kt` |
 | Consistencia | `logout()` ahora también cierra sesión en Firebase (antes quedaba desincronizado) | `ZaiViewModel.kt` |
+| Sincronización en la nube | La configuración (API key, fondo de pantalla, tema/color, proveedor/modelo + creatividad/búsqueda web/TTS/razonamiento) se sincroniza por cuenta en **Firestore** (`users/{uid}`); la imagen de fondo en **Storage** (`backgrounds/{uid}.jpg`). Al iniciar sesión se restaura desde la nube; al logout se limpia lo local (ya no queda la API key de un usuario para el siguiente). | `ZaiViewModel.kt`, `build.gradle.kts`, `libs.versions.toml`, `firestore.rules`, `storage.rules` |
+| Historial en la nube | Sesiones y mensajes se espejan en Firestore (`users/{uid}/sessions/{cloudId}` y `.../messages/{msgCloudId}`), cada fila con un `cloudId` (UUID) que mapea 1:1 local↔nube. Se restauran al iniciar sesión y se suben al crear/escribir/renombrar/borrar. Room subió a versión 6 (migración `5→6` no destructiva) añadiendo `cloudId`. Reglas de Firestore ampliadas para cubrir subcolecciones. | `ZaiViewModel.kt`, `Entities.kt`, `ChatDao.kt`, `AppDatabase.kt`, `AppRepository.kt`, `firestore.rules` |
 
 ## ⏳ Pendiente / recomendado (no aplicado todavía)
 
